@@ -15,5 +15,21 @@ func main() {
 		})
 	})
 
-	router.Run(":8080")
+	router.GET("/api/search", func(c *gin.Context) {
+		q := c.Query("q")
+
+		if q == "" {
+			c.JSON(http.StatusUnprocessableEntity, gin.H{
+				"statusCode": 422,
+				"message":    "q is required",
+			})
+			return
+		}
+
+		c.JSON(http.StatusOK, gin.H{
+			"data": []interface{}{},
+		})
+	})
+
+	router.Run(":8084")
 }
