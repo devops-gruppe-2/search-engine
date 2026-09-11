@@ -7,20 +7,30 @@ HTML
     <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
-
+    
     {{ template "header" . }}
 
+    <h2>Login</h2>
+    
+
     <form action="/login" method="POST">
-        <h2>Login</h2>
         
+    <dl>
+      <dt>Username:
+      <dd><input type="text" name="username" placeholder="Username" required>
+      <dt>Password:
+      <dd><input type="password" name="password" size="30">
+    </dl>
         {{ if .Error }}
             <p style="color: red; margin: 0;">{{ .Error }}</p>
         {{ end }}
 
-        <input type="text" name="username" placeholder="Username" required>
-        <input type="password" name="password" placeholder="Password" required>
-        <button type="submit">Log In</button>
+        
+        <div class="actions">
+            <input type="submit" id="ligin-button" value="Log in">
+        </div>
+        
     </form>
 
 </body>
-</html>
+</html> 
