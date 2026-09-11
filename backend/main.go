@@ -41,7 +41,7 @@ func main() {
 		})
 	})
 
-	router.POST("/register", registerUser)
+	router.POST("/api/register", registerUser)
 
 	router.Run(":8080")
 
