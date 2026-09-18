@@ -2,15 +2,15 @@ package main
 
 import (
 	"database/sql"
+	_ "embed"
 	"fmt"
 	"log"
 	"net/http"
 	"strings"
+
 	"github.com/gin-gonic/gin"
 	_ "modernc.org/sqlite"
-	_ "embed"
 )
-
 
 //==============================================================================================================================================================================
 // GLOBAL VARIABLES AND OTHER DEFINITIONS
@@ -59,6 +59,7 @@ func main() {
 	})
 
 	router.POST("/api/register", registerUser)
+	router.POST("/api/login", loginUser)
 
 	router.Run(":8080")
 
@@ -95,7 +96,6 @@ func initDB(dbPath string) (*sql.DB, error) {
 	return db, nil
 }
 
-
 //==============================================================================================================================================================================
 // CREATE ENDPOIINTS
 //==============================================================================================================================================================================
@@ -125,6 +125,59 @@ func registerUser(c *gin.Context) {
 	c.JSON(http.StatusCreated, APIResponse{
 		Status:  "success",
 		Message: "User registered successfully",
+		User:    username,
+	})
+}
+
+// Vores login funktion
+func loginUser(c *gin.Context) {
+	//Vi henter username og password efter at have oprettet variablerne
+	//username og password
+	username := c.PostForm("username")
+	password := c.PostForm("password")
+
+	//Her kontrollerer vi, at brugeren har skrevet begge dele
+	if username == "" || password == "" {
+		//JSON-svar sendes tilbage til klienten
+		//ttp.StatusBadRequest er HTTP-status 400
+		c.JSON(http.StatusBadRequest, APIResponse{
+			//Klienten får
+			Status:  "error",
+			Message: "Username and password are required",
+		})
+		return
+	}
+
+	//Opretter variabel, som holder det password, vi skal finde i databasen
+	var storedPassword string
+	//Vi laver query her, som betyder: find passwordet for denne bruger, hvis brugernavnet passer
+	query := "SELECT password FROM users WHERE username =?"
+	err := db.QueryRow(query, username).Scan(&storedPassword)
+
+	//Hvis der skulle opstå en fejl under databaseopslaget
+	if err != nil {
+		//HTTP sender 401 til brugeren
+		c.JSON(http.StatusUnauthorized, APIResponse{
+			//logsinforsøg gav en fejl
+			Status: "error",
+			//Beskeden skjuler, om det er userame eler password, der er forkert skrevet
+			Message: "Invalid username or password",
+		})
+		//Her asluttes JSON-objektet
+		return
+	}
+
+	if password != storedPassword {
+		c.JSON(http.StatusUnauthorized, APIResponse{
+			Status:  "error",
+			Message: "Invalid username or password",
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, APIResponse{
+		Status:  "success",
+		Message: "Login successful",
 		User:    username,
 	})
 }
