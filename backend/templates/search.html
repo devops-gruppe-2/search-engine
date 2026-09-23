@@ -1,0 +1,20 @@
+{{ define "title" }}
+{{ end }}
+
+{{ define "body" }}
+<div>
+  <form action="" method="GET">
+    <input id="search-input" name="q" placeholder="Search..." value="{{ .query }}" autofocus />
+    <button id="search-button" type="submit">Search</button>
+  </form>
+</div>
+
+<div id="results">
+  {{ range .search_results }}
+  <div>
+      <h2><a class="search-result-title" href="{{ .url }}">{{ .title }}</a></h2>
+      <p class="search-result-description">{{ .description }}</p>
+  </div>
+  {{ end }}
+</div>
+{{ end }}
