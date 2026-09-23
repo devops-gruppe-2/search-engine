@@ -1,13 +1,74 @@
 package main
 
 import (
+	"database/sql"
+	_ "embed"
+	"fmt"
+	"log"
 	"net/http"
+	"strings"
 
 	"github.com/gin-gonic/gin"
+	_ "modernc.org/sqlite"
 )
 
+//==============================================================================================================================================================================
+// GLOBAL VARIABLES AND OTHER DEFINITIONS
+//==============================================================================================================================================================================
+
+//go:embed schema.sqlite
+var schemaSQL string
+var db *sql.DB
+
+type APIUserCreatedResponse struct {
+	Status  string `json:"status"`
+	Message string `json:"message"`
+	User    string `json:"user,omitempty"`
+}
+
+type SearchResult struct {
+	ID      int    `json:"id"`
+	Title   string `json:"title"`
+	Content string `json:"content"`
+	Language string `json:"language"`
+}
+
+type APIUserSearchResponse struct {
+	Status  string `json:"status"`
+	Message string `json:"message"`
+	SearchResults []SearchResult `json:"results,omitempty"`
+}
+
+//==============================================================================================================================================================================
+// MAIN
+//==============================================================================================================================================================================
+
 func main() {
+
+	// Database startup
+	var err error
+	db, err = initDB("./app.db")
+
+	if err != nil {
+		log.Fatalf("Failed to initialize database: %v", err)
+	}
+	defer db.Close()
+
+	fmt.Println("Database initialized successfully")
+
+	// Gin startup
+
 	router := gin.Default()
+
+	router.LoadHTMLFiles("templates/register.html")
+	router.GET("/register", func(c *gin.Context) {
+		c.HTML(http.StatusOK, "register.html", nil)
+	})
+
+	router.LoadHTMLFiles("templates/search.html")
+	router.GET("/", func(c *gin.Context) {
+		c.HTML(http.StatusOK, "search.html", nil)
+	})
 
 	router.GET("/", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{
@@ -15,21 +76,106 @@ func main() {
 		})
 	})
 
-	router.GET("/api/search", func(c *gin.Context) {
-		q := c.Query("q")
+	router.POST("/api/register", registerUser)
+	router.GET("/api/search", searchForStringInDB)
 
-		if q == "" {
-			c.JSON(http.StatusUnprocessableEntity, gin.H{
-				"statusCode": 422,
-				"message":    "q is required",
-			})
-			return
+	router.Run(":8080")
+
+}
+
+//==============================================================================================================================================================================
+// DATABASE
+//==============================================================================================================================================================================
+
+func initDB(dbPath string) (*sql.DB, error) {
+
+	dsn := dbPath + "?_pragma=foreign_keys(1)"
+	db, err := sql.Open("sqlite", dsn)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open database: %w", err)
+	}
+
+	if err := db.Ping(); err != nil {
+		return nil, fmt.Errorf("failed to connect to database: %w", err)
+	}
+
+	statements := strings.Split(schemaSQL, ";")
+	for _, stmt := range statements {
+		stmt = strings.TrimSpace(stmt)
+		if stmt == "" {
+			continue
 		}
 
-		c.JSON(http.StatusOK, gin.H{
-			"data": []interface{}{},
+		if _, err := db.Exec(stmt); err != nil {
+			return nil, fmt.Errorf("failed to execute statement: %w", err)
+		}
+	}
+
+	return db, nil
+}
+
+//==============================================================================================================================================================================
+// CREATE ENDPOIINTS
+//==============================================================================================================================================================================
+
+func registerUser(c *gin.Context) {
+
+	username := c.PostForm("username")
+	password := c.PostForm("password")
+	email := c.PostForm("email")
+
+	if username == "" || password == "" || email == "" {
+		c.JSON(http.StatusBadRequest, APIUserCreatedResponse{
+			Status:  "error",
+			Message: "Username, email, and password are required",
 		})
+		return
+	}
+	query := "INSERT INTO users (username, email, password) VALUES (?, ?, ?)"
+	_, err := db.Exec(query, username, email, password)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, APIUserCreatedResponse{
+			Status:  "error",
+			Message: "Failed to register user",
+		})
+		return
+	}
+	c.JSON(http.StatusCreated, APIUserCreatedResponse{
+		Status:  "success",
+		Message: "User registered successfully",
+		User:    username,
+	})
+}
+
+//==============================================================================================================================================================================
+// READ ENDPOINTS
+//==============================================================================================================================================================================
+
+func searchForStringInDB(c *gin.Context) {
+	SearchParameter := c.Query("q")
+	if SearchParameter == "" {
+		c.JSON(http.StatusBadRequest, APIUserSearchResponse{
+			Status:  "error",
+			Message: "Search query is required",
+		})
+		return
+	}
+	language := c.DefaultQuery("language", "en")
+	query := "SELECT * FROM pages WHERE language = ? AND content LIKE ?"
+
+	_, err := db.Query(query, language, "%"+SearchParameter+"%")
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, APIUserSearchResponse{
+			Status:  "error",
+			Message: "Failed to search in database",
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, APIUserSearchResponse{
+		Status:  "success",
+		Message: "Search results found",
+		SearchResults: results,
 	})
 
-	router.Run(":8084")
 }
