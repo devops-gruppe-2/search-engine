@@ -12,8 +12,8 @@
 <div id="results">
   {{ range .search_results }}
   <div>
-      <h2><a class="search-result-title" href="{{ .url }}">{{ .title }}</a></h2>
-      <p class="search-result-description">{{ .description }}</p>
+      <h2><a class="search-result-title" href="{{ .URL }}">{{ .Title }}</a></h2>
+      <p class="search-result-description">{{ .Content }}</p>
   </div>
   {{ end }}
 </div>

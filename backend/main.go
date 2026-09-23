@@ -27,16 +27,17 @@ type APIUserCreatedResponse struct {
 }
 
 type SearchResult struct {
-	ID      int    `json:"id"`
-	Title   string `json:"title"`
-	Content string `json:"content"`
-	Language string `json:"language"`
+	Title       string `json:"title"`
+	URL         string `json:"url"`
+	Language    string `json:"language"`
+	LastUpdated string `json:"last_updated"`
+	Content     string `json:"content"`
 }
 
 type APIUserSearchResponse struct {
-	Status  string `json:"status"`
-	Message string `json:"message"`
-	SearchResults []SearchResult `json:"results,omitempty"`
+	Status        string         `json:"status"`
+	Message       string         `json:"message"`
+	SearchResults []SearchResult `json:"data"`
 }
 
 //==============================================================================================================================================================================
@@ -63,11 +64,6 @@ func main() {
 	router.LoadHTMLFiles("templates/register.html")
 	router.GET("/register", func(c *gin.Context) {
 		c.HTML(http.StatusOK, "register.html", nil)
-	})
-
-	router.LoadHTMLFiles("templates/search.html")
-	router.GET("/", func(c *gin.Context) {
-		c.HTML(http.StatusOK, "search.html", nil)
 	})
 
 	router.GET("/", func(c *gin.Context) {
@@ -163,7 +159,7 @@ func searchForStringInDB(c *gin.Context) {
 	language := c.DefaultQuery("language", "en")
 	query := "SELECT * FROM pages WHERE language = ? AND content LIKE ?"
 
-	_, err := db.Query(query, language, "%"+SearchParameter+"%")
+	rows, err := db.Query(query, language, "%"+SearchParameter+"%")
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, APIUserSearchResponse{
 			Status:  "error",
@@ -171,10 +167,26 @@ func searchForStringInDB(c *gin.Context) {
 		})
 		return
 	}
+	defer rows.Close()
+
+	var results []SearchResult
+
+	for rows.Next() {
+		var result SearchResult
+		err := rows.Scan(&result.Title, &result.URL, &result.Language, &result.LastUpdated, &result.Content)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, APIUserSearchResponse{
+				Status:  "error",
+				Message: "Failed to scan search results",
+			})
+			return
+		}
+		results = append(results, result)
+	}
 
 	c.JSON(http.StatusOK, APIUserSearchResponse{
-		Status:  "success",
-		Message: "Search results found",
+		Status:        "success",
+		Message:       "Search results found",
 		SearchResults: results,
 	})
 
