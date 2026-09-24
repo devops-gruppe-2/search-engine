@@ -72,7 +72,7 @@ func main() {
 		c.HTML(http.StatusOK, "search.html", nil)
 	})
 
-	
+
 	// Dynamically serve HTML pages based on the URL path
 	router.GET("/:page", func(c *gin.Context) {
 		page := c.Param("page")
@@ -86,9 +86,7 @@ func main() {
 		c.HTML(http.StatusOK, templateFile, nil)
 	})
 
-	c.HTML(http.StatusOK, page, nil)
-})
-
+	
 	router.POST("/api/register", registerUser)
 	router.GET("/api/search", searchForStringInDB)
 	router.POST("/api/login", loginUser)
