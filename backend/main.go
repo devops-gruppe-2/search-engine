@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"log"
 	"net/http"
-	"os"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -63,9 +62,18 @@ func main() {
 
 	router := gin.Default()
 
-	router.LoadHTMLFiles("templates/*")
+	router.LoadHTMLFiles(
+		"templates/search.html",
+		"templates/register.html",
+		"templates/login.html",
+	)
+
 	router.GET("/register", func(c *gin.Context) {
 		c.HTML(http.StatusOK, "register.html", nil)
+	})
+
+	router.GET("/login", func(c *gin.Context) {
+		c.HTML(http.StatusOK, "login.html", nil)
 	})
 
 	router.GET("/", func(c *gin.Context) {
@@ -73,18 +81,7 @@ func main() {
 	})
 
 
-	// Dynamically serve HTML pages based on the URL path
-	router.GET("/:page", func(c *gin.Context) {
-		page := c.Param("page")
-		templateFile := page + ".html"
-
-		if _, err := os.Stat("templates/" + templateFile); os.IsNotExist(err) {
-			c.JSON(http.StatusNotFound, gin.H{"error": "Page not found"})
-			return
-		}
-
-		c.HTML(http.StatusOK, templateFile, nil)
-	})
+	
 
 	
 	router.POST("/api/register", registerUser)
