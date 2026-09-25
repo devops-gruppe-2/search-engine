@@ -1,0 +1,32 @@
+
+
+<div>
+  <form action="/search" method="GET">
+    <input id="search-input" name="q" placeholder="Search..." value="{{ .Query }}" autofocus />
+    <button id="search-button" type="submit">Search</button>
+  </form>
+</div>
+
+
+
+<div id="results">
+  {{ range .SearchResults }}
+  <div>
+      <h2><a class="search-result-title" href="{{ .URL }}">{{ .Title }}</a></h2>
+      <p class="search-result-description">{{ .Content }}</p>
+  </div>
+  {{ end }}
+</div>
+
+{{ if .error }}
+
+{{ .error }}
+
+{{ else }}
+{{ range .SearchResults }}
+
+[{{ .Title }}]({{ .URL }})
+{{ .Content }}
+
+{{ end }}
+{{ end }}
