@@ -41,6 +41,11 @@ type APIUserSearchResponse struct {
 	SearchResults []SearchResult `json:"data"`
 }
 
+type AuthResponse struct {
+	StatusCode int    `json:"statusCode"`
+	Message    string `json:"message"`
+}
+
 //==============================================================================================================================================================================
 // MAIN
 //==============================================================================================================================================================================
@@ -166,11 +171,10 @@ func loginUser(c *gin.Context) {
 	//Her kontrollerer vi, at brugeren har skrevet begge dele
 	if username == "" || password == "" {
 		//JSON-svar sendes tilbage til klienten
-		//ttp.StatusBadRequest er HTTP-status 400
-		c.JSON(http.StatusBadRequest, APIUserSearchResponse{
-			//Klienten får
-			Status:  "error",
-			Message: "Username and password are required",
+		//ttp.StatusBadRequest er HTTP-status 422
+		c.JSON(http.StatusUnprocessableEntity, AuthResponse{
+			StatusCode: http.StatusUnprocessableEntity,
+			Message:    "Username and password are required",
 		})
 		return
 	}
@@ -184,28 +188,25 @@ func loginUser(c *gin.Context) {
 	//Hvis der skulle opstå en fejl under databaseopslaget
 	if err != nil {
 		//HTTP sender 401 til brugeren
-		c.JSON(http.StatusUnauthorized, APIUserSearchResponse{
-			//logsinforsøg gav en fejl
-			Status: "error",
-			//Beskeden skjuler, om det er userame eler password, der er forkert skrevet
-			Message: "Invalid username or password",
+		c.JSON(http.StatusUnauthorized, AuthResponse{
+			StatusCode: http.StatusUnauthorized,
+			Message:    "Invalid username or password",
 		})
 		//Her asluttes JSON-objektet
 		return
 	}
 
 	if password != storedPassword {
-		c.JSON(http.StatusUnauthorized, APIUserSearchResponse{
-			Status:  "error",
-			Message: "Invalid username or password",
+		c.JSON(http.StatusUnauthorized, AuthResponse{
+			StatusCode: http.StatusUnauthorized,
+			Message:    "Invalid username or password",
 		})
 		return
 	}
 
-	c.JSON(http.StatusOK, APIUserCreatedResponse{
-		Status:  "success",
-		Message: "Login successful",
-		User:    username,
+	c.JSON(http.StatusOK, AuthResponse{
+		StatusCode: http.StatusOK,
+		Message:    "Login successful",
 	})
 }
 
