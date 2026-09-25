@@ -80,14 +80,10 @@ func main() {
 		c.HTML(http.StatusOK, "search.html", nil)
 	})
 
-
-	
-
-	
 	router.POST("/api/register", registerUser)
-	router.GET("/api/search", searchForStringInDB)
+	router.GET("/api/search", SearchAPI)
 	router.POST("/api/login", loginUser)
-
+	router.GET("/search", HTMLSearchFunctionData)
 	router.Run(":8080")
 
 }
@@ -213,7 +209,7 @@ func loginUser(c *gin.Context) {
 	})
 }
 
-func searchForStringInDB(c *gin.Context) {
+func SearchAPI(c *gin.Context) {
 	SearchParameter := c.Query("q")
 	if SearchParameter == "" {
 		c.JSON(http.StatusBadRequest, APIUserSearchResponse{
@@ -228,8 +224,8 @@ func searchForStringInDB(c *gin.Context) {
 	rows, err := db.Query(query, language, "%"+SearchParameter+"%")
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, APIUserSearchResponse{
-			StatusCode:  422,
-			Message: "Failed to search in database",
+			StatusCode: 422,
+			Message:    "Failed to search in database",
 		})
 		return
 	}
@@ -242,8 +238,8 @@ func searchForStringInDB(c *gin.Context) {
 		err := rows.Scan(&result.Title, &result.URL, &result.Language, &result.LastUpdated, &result.Content)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, APIUserSearchResponse{
-				StatusCode:  422,
-				Message: "Failed to scan search results",
+				StatusCode: 422,
+				Message:    "Failed to scan search results",
 			})
 			return
 		}
@@ -254,6 +250,60 @@ func searchForStringInDB(c *gin.Context) {
 		Status:        "success",
 		Message:       "Search results found",
 		SearchResults: results,
+	})
+
+}
+
+func HTMLSearchFunctionData(c *gin.Context) {
+	searchParameter := c.Query("q")
+	language := c.DefaultQuery("language", "en")
+
+	if searchParameter == "" {
+		c.HTML(http.StatusOK, "search.html", gin.H{
+			"Query":         "",
+			"SearchResults": []SearchResult{},
+			"error":         nil,
+		})
+		return
+	}
+
+	query := "SELECT * FROM pages WHERE language = ? AND content LIKE ?"
+	rows, err := db.Query(query, language, "%"+searchParameter+"%")
+	if err != nil {
+		c.HTML(http.StatusInternalServerError, "search.html", gin.H{
+			"query":          searchParameter,
+			"search_results": []SearchResult{},
+			"error":          "Failed to search in database",
+		})
+		return
+	}
+	defer rows.Close()
+
+	var results []SearchResult
+
+	for rows.Next() {
+		var result SearchResult
+		err := rows.Scan(&result.Title, &result.URL, &result.Language, &result.LastUpdated, &result.Content)
+		if err != nil {
+			c.HTML(http.StatusInternalServerError, "search.html", gin.H{
+				"query":          searchParameter,
+				"search_results": []SearchResult{},
+				"error":          "Failed to scan search results",
+			})
+			return
+		}
+		results = append(results, result)
+	}
+
+	var errorMessage string
+	if len(results) == 0 {
+		errorMessage = "No results found"
+	}
+
+	c.HTML(http.StatusOK, "search.html", gin.H{
+		"Query":         searchParameter,
+		"SearchResults": results,
+		"error":         errorMessage,
 	})
 
 }
