@@ -1,0 +1,12 @@
+version: "2"
+
+run:
+  verbose: true
+
+linters:
+  disable-all: false  # Behold alle de standard-linters vi lige fik til at virke
+  enable:
+    - bodyclose      # KRITISK TIL HTTP: Tjekker at du altid husker 'defer resp.Body.Close()'
+    - noctx          # HTTP: Advarer hvis du sender HTTP-requests afsted uden en Context
+    - errorlint      # FEJL: Tjekker om fejl-wrapping og 'errors.Is()' bruges korrekt
+    - gosec          # SIKKERHED: Tjekker for sikkerhedsproblemer i koden
