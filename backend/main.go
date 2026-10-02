@@ -20,10 +20,25 @@ import (
 var schemaSQL string
 var db *sql.DB
 
-type APIResponse struct {
+type APIUserCreatedResponse struct {
 	Status  string `json:"status"`
 	Message string `json:"message"`
 	User    string `json:"user,omitempty"`
+}
+
+type SearchResult struct {
+	Title       string `json:"title"`
+	URL         string `json:"url"`
+	Language    string `json:"language"`
+	LastUpdated string `json:"last_updated"`
+	Content     string `json:"content"`
+}
+
+type APIUserSearchResponse struct {
+	Status        string         `json:"status"`
+	StatusCode    int            `json:"status_code,omitempty"`
+	Message       string         `json:"message"`
+	SearchResults []SearchResult `json:"data"`
 }
 
 //==============================================================================================================================================================================
@@ -47,20 +62,28 @@ func main() {
 
 	router := gin.Default()
 
-	router.LoadHTMLFiles("templates/register.html")
+	router.LoadHTMLFiles(
+		"templates/search.html",
+		"templates/register.html",
+		"templates/login.html",
+	)
+
 	router.GET("/register", func(c *gin.Context) {
 		c.HTML(http.StatusOK, "register.html", nil)
 	})
 
+	router.GET("/login", func(c *gin.Context) {
+		c.HTML(http.StatusOK, "login.html", nil)
+	})
+
 	router.GET("/", func(c *gin.Context) {
-		c.JSON(http.StatusOK, gin.H{
-			"message": "Search engine backend is running",
-		})
+		c.HTML(http.StatusOK, "search.html", nil)
 	})
 
 	router.POST("/api/register", registerUser)
+	router.GET("/api/search", SearchAPI)
 	router.POST("/api/login", loginUser)
-
+	router.GET("/search", HTMLSearchFunctionData)
 	router.Run(":8080")
 
 }
@@ -107,7 +130,7 @@ func registerUser(c *gin.Context) {
 	email := c.PostForm("email")
 
 	if username == "" || password == "" || email == "" {
-		c.JSON(http.StatusBadRequest, APIResponse{
+		c.JSON(http.StatusBadRequest, APIUserCreatedResponse{
 			Status:  "error",
 			Message: "Username, email, and password are required",
 		})
@@ -116,18 +139,22 @@ func registerUser(c *gin.Context) {
 	query := "INSERT INTO users (username, email, password) VALUES (?, ?, ?)"
 	_, err := db.Exec(query, username, email, password)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, APIResponse{
+		c.JSON(http.StatusInternalServerError, APIUserCreatedResponse{
 			Status:  "error",
 			Message: "Failed to register user",
 		})
 		return
 	}
-	c.JSON(http.StatusCreated, APIResponse{
+	c.JSON(http.StatusCreated, APIUserCreatedResponse{
 		Status:  "success",
 		Message: "User registered successfully",
 		User:    username,
 	})
 }
+
+//==============================================================================================================================================================================
+// READ ENDPOINTS
+//==============================================================================================================================================================================
 
 // Vores login funktion
 func loginUser(c *gin.Context) {
@@ -140,7 +167,7 @@ func loginUser(c *gin.Context) {
 	if username == "" || password == "" {
 		//JSON-svar sendes tilbage til klienten
 		//ttp.StatusBadRequest er HTTP-status 400
-		c.JSON(http.StatusBadRequest, APIResponse{
+		c.JSON(http.StatusBadRequest, APIUserSearchResponse{
 			//Klienten får
 			Status:  "error",
 			Message: "Username and password are required",
@@ -157,7 +184,7 @@ func loginUser(c *gin.Context) {
 	//Hvis der skulle opstå en fejl under databaseopslaget
 	if err != nil {
 		//HTTP sender 401 til brugeren
-		c.JSON(http.StatusUnauthorized, APIResponse{
+		c.JSON(http.StatusUnauthorized, APIUserSearchResponse{
 			//logsinforsøg gav en fejl
 			Status: "error",
 			//Beskeden skjuler, om det er userame eler password, der er forkert skrevet
@@ -168,20 +195,115 @@ func loginUser(c *gin.Context) {
 	}
 
 	if password != storedPassword {
-		c.JSON(http.StatusUnauthorized, APIResponse{
+		c.JSON(http.StatusUnauthorized, APIUserSearchResponse{
 			Status:  "error",
 			Message: "Invalid username or password",
 		})
 		return
 	}
 
-	c.JSON(http.StatusOK, APIResponse{
+	c.JSON(http.StatusOK, APIUserCreatedResponse{
 		Status:  "success",
 		Message: "Login successful",
 		User:    username,
 	})
 }
 
-//==============================================================================================================================================================================
-// READ ENDPOINTS
-//==============================================================================================================================================================================
+func SearchAPI(c *gin.Context) {
+	SearchParameter := c.Query("q")
+	if SearchParameter == "" {
+		c.JSON(http.StatusBadRequest, APIUserSearchResponse{
+			Status:  "error",
+			Message: "Search query is required",
+		})
+		return
+	}
+	language := c.DefaultQuery("language", "en")
+	query := "SELECT * FROM pages WHERE language = ? AND content LIKE ?"
+
+	rows, err := db.Query(query, language, "%"+SearchParameter+"%")
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, APIUserSearchResponse{
+			StatusCode: 422,
+			Message:    "Failed to search in database",
+		})
+		return
+	}
+	defer rows.Close()
+
+	var results []SearchResult
+
+	for rows.Next() {
+		var result SearchResult
+		err := rows.Scan(&result.Title, &result.URL, &result.Language, &result.LastUpdated, &result.Content)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, APIUserSearchResponse{
+				StatusCode: 422,
+				Message:    "Failed to scan search results",
+			})
+			return
+		}
+		results = append(results, result)
+	}
+
+	c.JSON(http.StatusOK, APIUserSearchResponse{
+		Status:        "success",
+		Message:       "Search results found",
+		SearchResults: results,
+	})
+
+}
+
+func HTMLSearchFunctionData(c *gin.Context) {
+	searchParameter := c.Query("q")
+	language := c.DefaultQuery("language", "en")
+
+	if searchParameter == "" {
+		c.HTML(http.StatusOK, "search.html", gin.H{
+			"Query":         "",
+			"SearchResults": []SearchResult{},
+			"error":         nil,
+		})
+		return
+	}
+
+	query := "SELECT * FROM pages WHERE language = ? AND content LIKE ?"
+	rows, err := db.Query(query, language, "%"+searchParameter+"%")
+	if err != nil {
+		c.HTML(http.StatusInternalServerError, "search.html", gin.H{
+			"query":          searchParameter,
+			"search_results": []SearchResult{},
+			"error":          "Failed to search in database",
+		})
+		return
+	}
+	defer rows.Close()
+
+	var results []SearchResult
+
+	for rows.Next() {
+		var result SearchResult
+		err := rows.Scan(&result.Title, &result.URL, &result.Language, &result.LastUpdated, &result.Content)
+		if err != nil {
+			c.HTML(http.StatusInternalServerError, "search.html", gin.H{
+				"query":          searchParameter,
+				"search_results": []SearchResult{},
+				"error":          "Failed to scan search results",
+			})
+			return
+		}
+		results = append(results, result)
+	}
+
+	var errorMessage string
+	if len(results) == 0 {
+		errorMessage = "No results found"
+	}
+
+	c.HTML(http.StatusOK, "search.html", gin.H{
+		"Query":         searchParameter,
+		"SearchResults": results,
+		"error":         errorMessage,
+	})
+
+}
