@@ -8,6 +8,8 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/gin-contrib/sessions"
+	"github.com/gin-contrib/sessions/cookie"
 	"github.com/gin-gonic/gin"
 	_ "modernc.org/sqlite"
 )
@@ -47,6 +49,21 @@ func main() {
 
 	router := gin.Default()
 
+	// session håndtering middleware
+	store := cookie.NewStore(
+		[]byte("0123456789abcdef0123456789abcdef"),
+	)
+
+	store.Options(sessions.Options{
+		Path:     "/",
+		MaxAge:   86400,
+		HttpOnly: true,
+		Secure:   false,
+		SameSite: http.SameSiteLaxMode,
+	})
+
+	router.Use(sessions.Sessions("user_session", store))
+
 	router.LoadHTMLFiles("templates/register.html")
 	router.GET("/register", func(c *gin.Context) {
 		c.HTML(http.StatusOK, "register.html", nil)
@@ -60,6 +77,7 @@ func main() {
 
 	router.POST("/api/register", registerUser)
 	router.POST("/api/login", loginUser)
+	router.POST("/api/logout", logoutUser)
 
 	router.Run(":8080")
 
@@ -175,11 +193,65 @@ func loginUser(c *gin.Context) {
 		return
 	}
 
+	// Passwordet er korrekt, så vi henter brugerens session
+	session := sessions.Default(c)
+
+	// Gem brugernavnet i sessionen
+	session.Set("username", username)
+
+	// Gem sessionen og send cookien tilbage til browseren
+	if err := session.Save(); err != nil {
+		c.JSON(http.StatusInternalServerError, APIResponse{
+			Status:  "error",
+			Message: "Failed to create session",
+		})
+		return
+	}
+
 	c.JSON(http.StatusOK, APIResponse{
 		Status:  "success",
 		Message: "Login successful",
 		User:    username,
 	})
+}
+
+func logoutUser(c *gin.Context) {
+
+	session := sessions.Default(c)
+
+	username := session.Get("username")
+
+	if username == nil {
+		c.JSON(http.StatusUnauthorized, APIResponse{
+			Status:  "error",
+			Message: "You are not logged in",
+		})
+		return
+	}
+
+	session.Clear()
+
+	session.Options(sessions.Options{
+		Path:     "/",
+		MaxAge:   -1,
+		HttpOnly: true,
+		Secure:   false,
+		SameSite: http.SameSiteLaxMode,
+	})
+
+	if err := session.Save(); err != nil {
+		c.JSON(http.StatusInternalServerError, APIResponse{
+			Status:  "error",
+			Message: "Failed to log out",
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, APIResponse{
+		Status:  "success",
+		Message: "Logout successful",
+	})
+
 }
 
 //==============================================================================================================================================================================
