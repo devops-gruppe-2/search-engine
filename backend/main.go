@@ -71,6 +71,7 @@ func main() {
 		"templates/search.html",
 		"templates/register.html",
 		"templates/login.html",
+		"templates/header.html",
 	)
 
 	router.GET("/register", func(c *gin.Context) {
