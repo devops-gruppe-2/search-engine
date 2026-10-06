@@ -53,7 +53,6 @@ If everything is set up correctly, you will see a green **`golangci-lint...Passe
 *   
 
 
-```md
 ## ☁️ Azure VM Access
 
 The application is deployed on an Azure VM running AlmaLinux 9.8.
@@ -203,5 +202,5 @@ Check the backup log:
 ```bash
 cat /home/azureuser/backup.log
 ```
-```
+
 
