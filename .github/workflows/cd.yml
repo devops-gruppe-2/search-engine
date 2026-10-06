@@ -30,3 +30,22 @@ jobs:
           context: ./backend
           push: true
           tags: ghcr.io/devops-gruppe-2/search-engine:latest
+
+      - name: Deploy to Azure VM
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.AZURE_HOST }}
+          username: ${{ secrets.AZURE_USER }}
+          key: ${{ secrets.AZURE_SSH_KEY }}
+          script: |
+            docker pull ghcr.io/devops-gruppe-2/search-engine:latest
+
+            docker stop whoknows-backend || true
+            docker rm whoknows-backend || true
+
+            docker run -d \
+              --name whoknows-backend \
+              --restart unless-stopped \
+              -p 8080:8080 \
+              -v /home/azureuser/app.db:/app/app.db \
+              ghcr.io/devops-gruppe-2/search-engine:latest
