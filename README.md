@@ -51,7 +51,7 @@ If everything is set up correctly, you will see a green **`golangci-lint...Passe
 *   **Targeted Scans:** The linter is configured to run specifically inside our `/backend` module where our `go.mod` lives, preventing path-resolution and type-checking glitches.
 *   **Custom Rules:** You can see or adjust the specific active checksuites (such as `gosec` for SQL injection and `bodyclose` for HTTP leaks) inside the `backend/.golangci.yml` file.
  
-
+---
 
 ## ☁️ Azure VM Access
 
