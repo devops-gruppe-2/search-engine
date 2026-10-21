@@ -8,6 +8,8 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/gin-contrib/sessions"
+	"github.com/gin-contrib/sessions/cookie"
 	"github.com/gin-gonic/gin"
 	_ "modernc.org/sqlite"
 )
@@ -67,6 +69,21 @@ func main() {
 
 	router := gin.Default()
 
+	// session håndtering middleware
+	store := cookie.NewStore(
+		[]byte("0123456789abcdef0123456789abcdef"),
+	)
+
+	store.Options(sessions.Options{
+		Path:     "/",
+		MaxAge:   86400,
+		HttpOnly: true,
+		Secure:   false,
+		SameSite: http.SameSiteLaxMode,
+	})
+
+	router.Use(sessions.Sessions("user_session", store))
+
 	router.LoadHTMLFiles(
 		"templates/search.html",
 		"templates/register.html",
@@ -90,6 +107,8 @@ func main() {
 	router.GET("/api/search", SearchAPI)
 	router.POST("/api/login", loginUser)
 	router.GET("/search", HTMLSearchFunctionData)
+	router.POST("/api/logout", logoutUser)
+
 	router.Run(":8080")
 
 }
@@ -205,6 +224,21 @@ func loginUser(c *gin.Context) {
 		return
 	}
 
+	// Passwordet er korrekt, så vi henter brugerens session
+	session := sessions.Default(c)
+
+	// Gem brugernavnet i sessionen
+	session.Set("username", username)
+
+	// Gem sessionen og send cookien tilbage til browseren
+	if err := session.Save(); err != nil {
+		c.JSON(http.StatusInternalServerError, AuthResponse{
+			StatusCode: http.StatusInternalServerError,
+			Message:    "Failed to create session",
+		})
+		return
+	}
+
 	c.JSON(http.StatusOK, AuthResponse{
 		StatusCode: http.StatusOK,
 		Message:    "Login successful",
@@ -309,3 +343,46 @@ func HTMLSearchFunctionData(c *gin.Context) {
 	})
 
 }
+
+func logoutUser(c *gin.Context) {
+
+	session := sessions.Default(c)
+
+	username := session.Get("username")
+
+	if username == nil {
+		c.JSON(http.StatusUnauthorized, AuthResponse{
+			StatusCode: http.StatusUnauthorized,
+			Message:    "You are not logged in",
+		})
+		return
+	}
+
+	session.Clear()
+
+	session.Options(sessions.Options{
+		Path:     "/",
+		MaxAge:   -1,
+		HttpOnly: true,
+		Secure:   false,
+		SameSite: http.SameSiteLaxMode,
+	})
+
+	if err := session.Save(); err != nil {
+		c.JSON(http.StatusInternalServerError, AuthResponse{
+			StatusCode: http.StatusInternalServerError,
+			Message:    "Failed to log out",
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, AuthResponse{
+		StatusCode: http.StatusOK,
+		Message:    "Logout successful",
+	})
+
+}
+
+//==============================================================================================================================================================================
+// READ ENDPOINTS
+//==============================================================================================================================================================================
