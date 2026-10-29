@@ -53,21 +53,21 @@ If everything is set up correctly, you will see a green **`golangci-lint...Passe
  
 ---
 
-## ☁️ Azure VM Access
+## ☁️ Server Access
 
-The application is deployed on an Azure VM running AlmaLinux 9.8.
+The application is deployed on a DigitalOcean droplet running Ubuntu 26.04 LTS.
 
 SSH:
 
 ```bash
-ssh azureuser@20.250.11.23
+ssh deploy@157.245.66.153
 ```
 
 An authorized SSH key is required.
 
 ---
 
-## 🐳 Docker on Azure
+## 🐳 Docker on the server
 
 The backend runs in a Docker container named:
 
@@ -111,7 +111,7 @@ When changes are merged to `main`:
 
 1. A new Docker image is built
 2. The image is pushed to GitHub Container Registry
-3. GitHub Actions connects to the Azure VM using SSH
+3. GitHub Actions connects to the droplet using SSH
 4. The VM pulls the newest image
 5. The old container is replaced with the new version
 
@@ -124,7 +124,7 @@ ghcr.io/devops-gruppe-2/search-engine:latest
 Application:
 
 ```text
-http://20.250.11.23:8080
+http://157.245.66.153
 ```
 
 ---
@@ -133,10 +133,10 @@ http://20.250.11.23:8080
 
 The application uses SQLite.
 
-The active database on the Azure VM is:
+The active database on the droplet is:
 
 ```text
-/home/azureuser/app.db
+/opt/whoknows/app.db
 ```
 
 The database is mounted into the Docker container as:
@@ -150,7 +150,7 @@ This keeps the database data when the container is replaced.
 Open the database:
 
 ```bash
-sqlite3 /home/azureuser/app.db
+sqlite3 /opt/whoknows/app.db
 ```
 
 Show tables:
@@ -169,25 +169,21 @@ Exit SQLite:
 
 ## 💾 Database Backup
 
-Automatic database backup is configured on the Azure VM.
+Automatic database backup is configured on the droplet.
 
 Backup script:
 
 ```text
-/home/azureuser/backup-db.sh
+/opt/whoknows/backup-db.sh
 ```
 
 Local backups:
 
 ```text
-/home/azureuser/db-backups
+/opt/whoknows/db-backups
 ```
 
-Backups are also uploaded to the shared Google Drive folder:
-
-```text
-whoknows-backups
-```
+Backups older than 14 days are deleted automatically.
 
 The backup runs every day at 02:00 using cron.
 
@@ -200,7 +196,7 @@ crontab -l
 Check the backup log:
 
 ```bash
-cat /home/azureuser/backup.log
+cat /opt/whoknows/backup.log
 ```
 
 
