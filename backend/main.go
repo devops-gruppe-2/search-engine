@@ -91,22 +91,34 @@ func main() {
 		"templates/header.html",
 	)
 
+	// CSS og andre statiske filer
+	router.Static("/static", "./static")
+
 	router.GET("/register", func(c *gin.Context) {
-		c.HTML(http.StatusOK, "register.html", nil)
+		if isLoggedIn(c) {
+			c.Redirect(http.StatusSeeOther, "/")
+			return
+		}
+		c.HTML(http.StatusOK, "register.html", pageData(c, gin.H{}))
 	})
 
 	router.GET("/login", func(c *gin.Context) {
-		c.HTML(http.StatusOK, "login.html", nil)
+		if isLoggedIn(c) {
+			c.Redirect(http.StatusSeeOther, "/")
+			return
+		}
+		c.HTML(http.StatusOK, "login.html", pageData(c, gin.H{}))
 	})
 
-	router.GET("/", func(c *gin.Context) {
-		c.HTML(http.StatusOK, "search.html", nil)
-	})
+	// Forsiden er søgesiden, ligesom i legacy
+	router.GET("/", HTMLSearchFunctionData)
 
 	router.POST("/api/register", registerUser)
 	router.GET("/api/search", SearchAPI)
 	router.POST("/api/login", loginUser)
 	router.GET("/search", HTMLSearchFunctionData)
+	// OpenAPI-spec'en siger GET, POST beholdes så eksisterende klienter ikke går i stykker
+	router.GET("/api/logout", logoutUser)
 	router.POST("/api/logout", logoutUser)
 
 	router.Run(":8080")
@@ -145,6 +157,29 @@ func initDB(dbPath string) (*sql.DB, error) {
 }
 
 //==============================================================================================================================================================================
+// HTML HELPERS
+//==============================================================================================================================================================================
+
+// wantsHTML er true når kaldet kommer fra en browser (fx en formular), så vi kan svare med en side i stedet for JSON
+func wantsHTML(c *gin.Context) bool {
+	return strings.Contains(c.GetHeader("Accept"), "text/html")
+}
+
+// isLoggedIn tjekker om der er en bruger gemt i sessionen
+func isLoggedIn(c *gin.Context) bool {
+	return sessions.Default(c).Get("username") != nil
+}
+
+// pageData tilføjer login-status, som headeren bruger til at vise log ind/log ud
+func pageData(c *gin.Context, data gin.H) gin.H {
+	if username, ok := sessions.Default(c).Get("username").(string); ok {
+		data["LoggedIn"] = true
+		data["Username"] = username
+	}
+	return data
+}
+
+//==============================================================================================================================================================================
 // CREATE ENDPOIINTS
 //==============================================================================================================================================================================
 
@@ -154,7 +189,15 @@ func registerUser(c *gin.Context) {
 	password := c.PostForm("password")
 	email := c.PostForm("email")
 
+	// Bruges når formularen skal vises igen med en fejl
+	formData := gin.H{"FormUsername": username, "FormEmail": email}
+
 	if username == "" || password == "" || email == "" {
+		if wantsHTML(c) {
+			formData["Error"] = "Username, email, and password are required"
+			c.HTML(http.StatusBadRequest, "register.html", pageData(c, formData))
+			return
+		}
 		c.JSON(http.StatusBadRequest, APIUserCreatedResponse{
 			Status:  "error",
 			Message: "Username, email, and password are required",
@@ -164,10 +207,21 @@ func registerUser(c *gin.Context) {
 	query := "INSERT INTO users (username, email, password) VALUES (?, ?, ?)"
 	_, err := db.Exec(query, username, email, password)
 	if err != nil {
+		if wantsHTML(c) {
+			formData["Error"] = "Failed to register user"
+			c.HTML(http.StatusInternalServerError, "register.html", pageData(c, formData))
+			return
+		}
 		c.JSON(http.StatusInternalServerError, APIUserCreatedResponse{
 			Status:  "error",
 			Message: "Failed to register user",
 		})
+		return
+	}
+
+	// En bruger i browseren sendes videre til login-siden
+	if wantsHTML(c) {
+		c.Redirect(http.StatusSeeOther, "/login")
 		return
 	}
 	c.JSON(http.StatusCreated, APIUserCreatedResponse{
@@ -188,14 +242,20 @@ func loginUser(c *gin.Context) {
 	username := c.PostForm("username")
 	password := c.PostForm("password")
 
+	// Browseren får login-siden med en fejlbesked, alle andre får JSON
+	loginFailed := func(status int, message string) {
+		if wantsHTML(c) {
+			c.HTML(status, "login.html", pageData(c, gin.H{"Error": message, "FormUsername": username}))
+			return
+		}
+		c.JSON(status, AuthResponse{StatusCode: status, Message: message})
+	}
+
 	//Her kontrollerer vi, at brugeren har skrevet begge dele
 	if username == "" || password == "" {
 		//JSON-svar sendes tilbage til klienten
 		//ttp.StatusBadRequest er HTTP-status 422
-		c.JSON(http.StatusUnprocessableEntity, AuthResponse{
-			StatusCode: http.StatusUnprocessableEntity,
-			Message:    "Username and password are required",
-		})
+		loginFailed(http.StatusUnprocessableEntity, "Username and password are required")
 		return
 	}
 
@@ -208,19 +268,13 @@ func loginUser(c *gin.Context) {
 	//Hvis der skulle opstå en fejl under databaseopslaget
 	if err != nil {
 		//HTTP sender 401 til brugeren
-		c.JSON(http.StatusUnauthorized, AuthResponse{
-			StatusCode: http.StatusUnauthorized,
-			Message:    "Invalid username or password",
-		})
+		loginFailed(http.StatusUnauthorized, "Invalid username or password")
 		//Her asluttes JSON-objektet
 		return
 	}
 
 	if password != storedPassword {
-		c.JSON(http.StatusUnauthorized, AuthResponse{
-			StatusCode: http.StatusUnauthorized,
-			Message:    "Invalid username or password",
-		})
+		loginFailed(http.StatusUnauthorized, "Invalid username or password")
 		return
 	}
 
@@ -232,13 +286,15 @@ func loginUser(c *gin.Context) {
 
 	// Gem sessionen og send cookien tilbage til browseren
 	if err := session.Save(); err != nil {
-		c.JSON(http.StatusInternalServerError, AuthResponse{
-			StatusCode: http.StatusInternalServerError,
-			Message:    "Failed to create session",
-		})
+		loginFailed(http.StatusInternalServerError, "Failed to create session")
 		return
 	}
 
+	// En bruger i browseren sendes til forsiden, hvor log ud-linket nu vises
+	if wantsHTML(c) {
+		c.Redirect(http.StatusSeeOther, "/")
+		return
+	}
 	c.JSON(http.StatusOK, AuthResponse{
 		StatusCode: http.StatusOK,
 		Message:    "Login successful",
@@ -295,22 +351,21 @@ func HTMLSearchFunctionData(c *gin.Context) {
 	language := c.DefaultQuery("language", "en")
 
 	if searchParameter == "" {
-		c.HTML(http.StatusOK, "search.html", gin.H{
+		c.HTML(http.StatusOK, "search.html", pageData(c, gin.H{
 			"Query":         "",
 			"SearchResults": []SearchResult{},
-			"error":         nil,
-		})
+		}))
 		return
 	}
 
 	query := "SELECT * FROM pages WHERE language = ? AND content LIKE ?"
 	rows, err := db.Query(query, language, "%"+searchParameter+"%")
 	if err != nil {
-		c.HTML(http.StatusInternalServerError, "search.html", gin.H{
-			"query":          searchParameter,
-			"search_results": []SearchResult{},
-			"error":          "Failed to search in database",
-		})
+		c.HTML(http.StatusInternalServerError, "search.html", pageData(c, gin.H{
+			"Query":         searchParameter,
+			"SearchResults": []SearchResult{},
+			"Error":         "Failed to search in database",
+		}))
 		return
 	}
 	defer rows.Close()
@@ -321,11 +376,11 @@ func HTMLSearchFunctionData(c *gin.Context) {
 		var result SearchResult
 		err := rows.Scan(&result.Title, &result.URL, &result.Language, &result.LastUpdated, &result.Content)
 		if err != nil {
-			c.HTML(http.StatusInternalServerError, "search.html", gin.H{
-				"query":          searchParameter,
-				"search_results": []SearchResult{},
-				"error":          "Failed to scan search results",
-			})
+			c.HTML(http.StatusInternalServerError, "search.html", pageData(c, gin.H{
+				"Query":         searchParameter,
+				"SearchResults": []SearchResult{},
+				"Error":         "Failed to scan search results",
+			}))
 			return
 		}
 		results = append(results, result)
@@ -336,11 +391,11 @@ func HTMLSearchFunctionData(c *gin.Context) {
 		errorMessage = "No results found"
 	}
 
-	c.HTML(http.StatusOK, "search.html", gin.H{
+	c.HTML(http.StatusOK, "search.html", pageData(c, gin.H{
 		"Query":         searchParameter,
 		"SearchResults": results,
-		"error":         errorMessage,
-	})
+		"Error":         errorMessage,
+	}))
 
 }
 
@@ -351,6 +406,10 @@ func logoutUser(c *gin.Context) {
 	username := session.Get("username")
 
 	if username == nil {
+		if wantsHTML(c) {
+			c.Redirect(http.StatusSeeOther, "/")
+			return
+		}
 		c.JSON(http.StatusUnauthorized, AuthResponse{
 			StatusCode: http.StatusUnauthorized,
 			Message:    "You are not logged in",
@@ -376,6 +435,10 @@ func logoutUser(c *gin.Context) {
 		return
 	}
 
+	if wantsHTML(c) {
+		c.Redirect(http.StatusSeeOther, "/")
+		return
+	}
 	c.JSON(http.StatusOK, AuthResponse{
 		StatusCode: http.StatusOK,
 		Message:    "Logout successful",
