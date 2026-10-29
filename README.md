@@ -200,3 +200,36 @@ cat /opt/whoknows/backup.log
 ```
 
 
+
+---
+
+## 🕷️ Wikipedia Crawler
+
+The search engine needs content in the `pages` table. The crawler in `backend/cmd/crawler` fetches Wikipedia articles from one or more categories and saves them as pages (title, URL, language, last updated and the article as plain text).
+
+It uses the Wikipedia API with a delay between requests and identifies itself with a User-Agent, so we don't put unnecessary load on Wikipedia. Running it again updates the articles that are already saved.
+
+Run it locally from the `backend` folder:
+
+```bash
+go run ./cmd/crawler -db ./app.db -limit 200
+```
+
+Options:
+
+| Flag | Default | Description |
+|---|---|---|
+| `-db` | `./app.db` | Path to the SQLite database |
+| `-lang` | `en` | Wikipedia language (`en` or `da`) |
+| `-categories` | `Category:Programming languages,Category:Computer programming` | Comma separated categories |
+| `-limit` | `200` | Max number of articles |
+| `-delay` | `200ms` | Pause between requests |
+
+On the droplet the crawler is built as a Linux binary and placed in `/opt/whoknows/crawler`. Take a backup first, then run it as the `deploy` user:
+
+```bash
+/opt/whoknows/backup-db.sh
+cd /opt/whoknows && ./crawler -db /opt/whoknows/app.db -limit 800
+```
+
+The output is logged to `/opt/whoknows/crawler.log` when it runs in the background.
