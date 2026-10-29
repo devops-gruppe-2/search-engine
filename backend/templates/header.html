@@ -1,12 +1,33 @@
-{{define "header"}}
+{{define "header"}}<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>¿Who Knows?</title>
+    <link rel="stylesheet" type="text/css" href="/static/style.css">
+</head>
+<body>
+<div class="page">
+  <div class="navigation">
+  <nav>
+    <h1><a id="nav-logo" href="/">¿Who Knows?</a></h1>
+    {{ if .LoggedIn }}
+    <a id="nav-logout" href="/api/logout">Log out [{{ .Username }}]</a>
+    {{ else }}
+    <a id="nav-login" href="/login">Log in</a>
+    <a id="nav-register" href="/register">Register</a>
+    {{ end }}
+  </nav>
+  </div>
+  <div class="body">
+{{end}}
 
-
-<header>
-    <div class="logo">Who knows</div>
-    <nav>
-        <a href="/search"><button>Home</button></a>
-        <a href="/register"><button>Register</button></a>
-        <a href="/login"><button>Login</button></a>
-    </nav>
-</header>
+{{define "footer"}}
+  </div>
+  <div class="footer">
+    <span>¿Who Knows? &copy; 2009</span>
+  </div>
+</div>
+</body>
+</html>
 {{end}}
