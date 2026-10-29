@@ -14,7 +14,7 @@
   {{ range .SearchResults }}
   <div>
       <h2><a class="search-result-title" href="{{ .URL }}">{{ .Title }}</a></h2>
-      <p class="search-result-description">{{ .Content }}</p>
+      <p class="search-result-description">{{ printf "%.300s" .Content }}…</p>
   </div>
   {{ end }}
 </div>
