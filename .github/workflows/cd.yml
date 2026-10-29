@@ -31,12 +31,12 @@ jobs:
           push: true
           tags: ghcr.io/devops-gruppe-2/search-engine:latest
 
-      - name: Deploy to Azure VM
+      - name: Deploy to DigitalOcean droplet
         uses: appleboy/ssh-action@v1
         with:
-          host: ${{ secrets.AZURE_HOST }}
-          username: ${{ secrets.AZURE_USER }}
-          key: ${{ secrets.AZURE_SSH_KEY }}
+          host: ${{ secrets.VM_HOST }}
+          username: ${{ secrets.VM_USER }}
+          key: ${{ secrets.VM_SSH_KEY }}
           script: |
             docker pull ghcr.io/devops-gruppe-2/search-engine:latest
 
@@ -46,6 +46,6 @@ jobs:
             docker run -d \
               --name whoknows-backend \
               --restart unless-stopped \
-              -p 8080:8080 \
-              -v /home/azureuser/app.db:/app/app.db \
+              -p 80:8080 \
+              -v /opt/whoknows/app.db:/app/app.db \
               ghcr.io/devops-gruppe-2/search-engine:latest
