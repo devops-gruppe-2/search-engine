@@ -9,5 +9,6 @@ services:
       - "8080:80"
     volumes:
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./backend/static:/usr/share/nginx/html/static:ro
     depends_on:
       - backend
