@@ -5,6 +5,7 @@ on:
     branches:
       - main
       - feature/ci-cd
+      - feature/smoke-testing
 
   pull_request:
     branches:
@@ -41,6 +42,25 @@ jobs:
         working-directory: backend
         run: go build -o backend main.go
 
-      - name: Build Docker image
-        working-directory: backend
-        run: docker build -t whoknows-backend .
+      - name: Start application
+        run: docker compose up --build -d
+
+      - name: Run smoke test
+        run: |
+          for i in {1..15}; do
+            if curl --fail --silent http://localhost:8080/ > /dev/null; then
+              ./scripts/smoke-test.sh
+              exit 0
+            fi
+
+            echo "Waiting for application..."
+            sleep 2
+          done
+
+          echo "Smoke test failed: application did not become ready."
+          docker compose logs
+          exit 1
+
+      - name: Stop application
+        if: always()
+        run: docker compose down
