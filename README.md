@@ -1,3 +1,9 @@
+## 📝 Change Log
+
+All changes to the project (code, server, domain and GitHub settings) are documented in [docs/aendringslog.md](docs/aendringslog.md): what changed, why, and how to check that it works.
+
+---
+
 ## 🛠️ Code Quality & Git Hooks (Linter)
 
 We use **`prek`** (a high-performance, Rust-based git hook manager) combined with **`golangci-lint` (v2)** to ensure that our Go webserver is secure, optimized, and free of resource leaks (like unclosed HTTP bodies or missing contexts) before code gets committed.
