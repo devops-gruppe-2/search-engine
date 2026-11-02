@@ -15,29 +15,39 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v5
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
 
       - name: Log in to GitHub Container Registry
-        uses: docker/login-action@v3
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build and push Docker image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
         with:
           context: ./backend
           push: true
           tags: ghcr.io/devops-gruppe-2/search-engine:latest
 
+      # Deploy med almindelig ssh i stedet for en tredjeparts-action,
+      # så vores private nøgle ikke gives til fremmed kode
       - name: Deploy to DigitalOcean droplet
-        uses: appleboy/ssh-action@v1
-        with:
-          host: ${{ secrets.VM_HOST }}
-          username: ${{ secrets.VM_USER }}
-          key: ${{ secrets.VM_SSH_KEY }}
-          script: |
+        env:
+          VM_HOST: ${{ secrets.VM_HOST }}
+          VM_USER: ${{ secrets.VM_USER }}
+          VM_SSH_KEY: ${{ secrets.VM_SSH_KEY }}
+        run: |
+          set -euo pipefail
+
+          mkdir -p ~/.ssh
+          printf '%s\n' "$VM_SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H "$VM_HOST" >> ~/.ssh/known_hosts
+
+          ssh -i ~/.ssh/deploy_key -o BatchMode=yes "$VM_USER@$VM_HOST" << 'EOF'
+            set -e
             docker pull ghcr.io/devops-gruppe-2/search-engine:latest
 
             docker stop whoknows-backend || true
@@ -49,3 +59,8 @@ jobs:
               -p 80:8080 \
               -v /opt/whoknows/app.db:/app/app.db \
               ghcr.io/devops-gruppe-2/search-engine:latest
+          EOF
+
+      - name: Remove SSH key
+        if: always()
+        run: rm -f ~/.ssh/deploy_key
