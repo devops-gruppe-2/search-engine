@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"database/sql"
 	_ "embed"
 	"fmt"
@@ -61,7 +62,11 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to initialize database: %v", err)
 	}
-	defer db.Close()
+	defer func() {
+		if err := db.Close(); err != nil {
+			log.Printf("Failed to close database: %v", err)
+		}
+	}()
 
 	fmt.Println("Database initialized successfully")
 
@@ -121,7 +126,9 @@ func main() {
 	router.GET("/api/logout", logoutUser)
 	router.POST("/api/logout", logoutUser)
 
-	router.Run(":8080")
+	if err := router.Run(":8080"); err != nil {
+		log.Fatalf("Server stopped: %v", err)
+	}
 
 }
 
@@ -137,7 +144,10 @@ func initDB(dbPath string) (*sql.DB, error) {
 		return nil, fmt.Errorf("failed to open database: %w", err)
 	}
 
-	if err := db.Ping(); err != nil {
+	// Opstarten har ingen request, så vi bruger en baggrunds-context
+	ctx := context.Background()
+
+	if err := db.PingContext(ctx); err != nil {
 		return nil, fmt.Errorf("failed to connect to database: %w", err)
 	}
 
@@ -148,7 +158,7 @@ func initDB(dbPath string) (*sql.DB, error) {
 			continue
 		}
 
-		if _, err := db.Exec(stmt); err != nil {
+		if _, err := db.ExecContext(ctx, stmt); err != nil {
 			return nil, fmt.Errorf("failed to execute statement: %w", err)
 		}
 	}
@@ -205,7 +215,7 @@ func registerUser(c *gin.Context) {
 		return
 	}
 	query := "INSERT INTO users (username, email, password) VALUES (?, ?, ?)"
-	_, err := db.Exec(query, username, email, password)
+	_, err := db.ExecContext(c.Request.Context(), query, username, email, password)
 	if err != nil {
 		if wantsHTML(c) {
 			formData["Error"] = "Failed to register user"
@@ -263,7 +273,7 @@ func loginUser(c *gin.Context) {
 	var storedPassword string
 	//Vi laver query her, som betyder: find passwordet for denne bruger, hvis brugernavnet passer
 	query := "SELECT password FROM users WHERE username =?"
-	err := db.QueryRow(query, username).Scan(&storedPassword)
+	err := db.QueryRowContext(c.Request.Context(), query, username).Scan(&storedPassword)
 
 	//Hvis der skulle opstå en fejl under databaseopslaget
 	if err != nil {
@@ -313,7 +323,7 @@ func SearchAPI(c *gin.Context) {
 	language := c.DefaultQuery("language", "en")
 	query := "SELECT * FROM pages WHERE language = ? AND content LIKE ?"
 
-	rows, err := db.Query(query, language, "%"+SearchParameter+"%")
+	rows, err := db.QueryContext(c.Request.Context(), query, language, "%"+SearchParameter+"%")
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, APIUserSearchResponse{
 			StatusCode: 422,
@@ -321,7 +331,7 @@ func SearchAPI(c *gin.Context) {
 		})
 		return
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var results []SearchResult
 
@@ -359,7 +369,7 @@ func HTMLSearchFunctionData(c *gin.Context) {
 	}
 
 	query := "SELECT * FROM pages WHERE language = ? AND content LIKE ?"
-	rows, err := db.Query(query, language, "%"+searchParameter+"%")
+	rows, err := db.QueryContext(c.Request.Context(), query, language, "%"+searchParameter+"%")
 	if err != nil {
 		c.HTML(http.StatusInternalServerError, "search.html", pageData(c, gin.H{
 			"Query":         searchParameter,
@@ -368,7 +378,7 @@ func HTMLSearchFunctionData(c *gin.Context) {
 		}))
 		return
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var results []SearchResult
 

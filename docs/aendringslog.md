@@ -6,6 +6,24 @@ Hver ændring i koden laves på en branch og merges til `main` via en pull reque
 
 ---
 
+## 2026-11-03 · Linter (golangci-lint) i CI (PR #46)
+
+**Hvad**
+- Nyt job `lint` i `ci.yml`, der kører golangci-lint v2.14.0 på `backend/` med reglerne i `backend/.golangci.yml`. Samme version som i `prek.toml`, så lokalt og CI giver samme resultat.
+- `.golangci.yml` er rettet til v2-formatet: `disable-all` og `run.verbose` findes ikke i v2 og er erstattet med `default: standard`.
+- Den eksisterende kode havde 13 fund, som er rettet:
+  - **errcheck (6):** fejl fra `Close()` og `router.Run()` blev ignoreret. Nu bliver de logget, eller ignoreret med vilje (`_ =`).
+  - **noctx (7):** databasekald brugte `Exec`, `Query` og `Ping` uden context. Nu bruges `...Context`-varianterne med requestens context, så et kald stoppes, hvis brugeren lukker forbindelsen.
+
+**Hvorfor**
+- Eksamenskrav: *Ensure software quality (static analysis / linting)*. Før kørte linteren kun lokalt for dem, der havde sat prek op.
+
+**Se at det virker**
+- GitHub → Actions → CI: jobbet *lint* er grønt. Fejler linteren, bliver PR'en rød.
+- Lokalt: `cd backend && golangci-lint run ./...` giver `0 issues`.
+
+---
+
 ## 2026-11-02 · Deploy uden tredjeparts-action og hash-pinning (PR #44)
 
 **Hvad**
