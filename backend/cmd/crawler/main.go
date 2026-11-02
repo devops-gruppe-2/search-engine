@@ -76,13 +76,18 @@ func main() {
 	if err != nil {
 		log.Fatalf("Kunne ikke åbne databasen: %v", err)
 	}
-	defer db.Close()
+	defer func() {
+		if err := db.Close(); err != nil {
+			log.Printf("Kunne ikke lukke databasen: %v", err)
+		}
+	}()
 
-	if err := ensurePagesTable(db); err != nil {
+	ctx := context.Background()
+
+	if err := ensurePagesTable(ctx, db); err != nil {
 		log.Fatalf("Kunne ikke oprette pages-tabellen: %v", err)
 	}
 
-	ctx := context.Background()
 	client := &http.Client{Timeout: 30 * time.Second}
 	apiURL := fmt.Sprintf("https://%s.wikipedia.org/w/api.php", *lang)
 
@@ -119,7 +124,7 @@ func main() {
 			log.Printf("[%d/%d] Sprang over %q: %v", i+1, len(titles), title, err)
 			continue
 		}
-		if err := savePage(db, p); err != nil {
+		if err := savePage(ctx, db, p); err != nil {
 			log.Printf("[%d/%d] Kunne ikke gemme %q: %v", i+1, len(titles), title, err)
 			continue
 		}
@@ -221,7 +226,7 @@ func getJSON(ctx context.Context, client *http.Client, requestURL string, target
 	if err != nil {
 		return err
 	}
-	defer res.Body.Close()
+	defer func() { _ = res.Body.Close() }()
 
 	if res.StatusCode != http.StatusOK {
 		return fmt.Errorf("wikipedia svarede %s", res.Status)
@@ -235,8 +240,8 @@ func getJSON(ctx context.Context, client *http.Client, requestURL string, target
 //==============================================================================================================================================================================
 
 // ensurePagesTable opretter tabellen med samme skema som schema.sqlite, hvis den mangler
-func ensurePagesTable(db *sql.DB) error {
-	_, err := db.Exec(`CREATE TABLE IF NOT EXISTS pages (
+func ensurePagesTable(ctx context.Context, db *sql.DB) error {
+	_, err := db.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS pages (
 		title TEXT PRIMARY KEY UNIQUE,
 		url TEXT NOT NULL UNIQUE,
 		language TEXT NOT NULL CHECK(language IN ('en', 'da')) DEFAULT 'en',
@@ -247,8 +252,8 @@ func ensurePagesTable(db *sql.DB) error {
 }
 
 // savePage indsætter artiklen, eller opdaterer den hvis den allerede er crawlet før
-func savePage(db *sql.DB, p page) error {
-	_, err := db.Exec(`INSERT INTO pages (title, url, language, last_updated, content)
+func savePage(ctx context.Context, db *sql.DB, p page) error {
+	_, err := db.ExecContext(ctx, `INSERT INTO pages (title, url, language, last_updated, content)
 		VALUES (?, ?, ?, ?, ?)
 		ON CONFLICT(title) DO UPDATE SET
 			url = excluded.url,
