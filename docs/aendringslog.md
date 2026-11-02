@@ -6,6 +6,27 @@ Hver ændring i koden laves på en branch og merges til `main` via en pull reque
 
 ---
 
+## 2026-11-03 · Branch protection på main (GitHub-indstilling, PR #47)
+
+**Hvad**
+- `main` er beskyttet under *Settings → Branches*:
+  - Alle ændringer skal ind via en pull request. Man kan ikke pushe direkte til `main`.
+  - CI-jobbene `lint` og `test-build` skal være grønne, før der kan merges.
+  - Branchen skal være opdateret med `main`, før den merges (*strict*), så testene har kørt på den kode, der faktisk kommer på `main`.
+  - Force push og sletning af `main` er ikke tilladt.
+- Der kræves ingen godkendelse fra et andet gruppemedlem. Vi koordinerer reviews over telefon.
+- Admins kan stadig gå udenom i en nødsituation.
+
+**Hvorfor**
+- Opgaven *Branch protection rules* (uge 4).
+- Ændringer er blevet lagt direkte på `main` og merget uden at CI var kørt færdig. Nu kan der ikke komme kode på `main`, som fejler lint eller test.
+
+**Se at det virker**
+- En PR med rød CI kan ikke merges: knappen *Merge pull request* er grå.
+- `git push origin main` bliver afvist.
+
+---
+
 ## 2026-11-03 · Linter (golangci-lint) i CI (PR #46)
 
 **Hvad**
