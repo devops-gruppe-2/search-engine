@@ -6,6 +6,35 @@ Hver ændring i koden laves på en branch og merges til `main` via en pull reque
 
 ---
 
+## 2026-11-03 · CI/CD-oprydning (PR #48)
+
+**Hvad**
+- **CI er delt op i tre jobs:** `lint` (golangci-lint og Hadolint), `test` (`go test`) og `build` (build, Docker og smoke test). `build` kører kun, hvis `lint` og `test` er grønne.
+- **CD venter på CI:** CD startede før samtidig med CI ved hvert push til `main`. Nu starter CD først, når CI er færdig på `main`, og kun hvis CI er grøn (`workflow_run`). CD kan også startes manuelt fra Actions-fanen (`workflow_dispatch`).
+- **Image-tag med commit:** Docker-imaget får både `:latest` og `:sha-<commit>`. Serveren kører nu det præcise `sha`-image, som CI har testet.
+- **Gamle triggers fjernet:** CI kørte også ved push til `feature/ci-cd` og `feature/smoke-testing`. Nu kun ved push til `main` og ved PR'er.
+- **Branch protection:** de krævede checks er ændret fra `lint` og `test-build` til `lint`, `test` og `build`.
+
+**Hvorfor**
+- Separate jobs gør det tydeligt, hvad der fejler (lint, test eller build), og lint og test kører samtidig, så CI bliver hurtigere.
+- Før kunne en commit på `main` blive deployet, selv om CI fejlede på den. Nu kommer kun kode, der har bestået CI, på serveren.
+- Med `:latest` alene kan man ikke se, hvilken version der kører, og man kan ikke rulle tilbage. Med `sha`-tagget kan man se versionen med `docker ps` og deploye en ældre version igen.
+
+**Se at det virker**
+- GitHub → Actions → CI viser tre jobs: `lint` og `test` side om side, derefter `build`.
+- CD starter først, når CI på `main` er grøn.
+- På serveren: `docker ps` viser imaget `ghcr.io/devops-gruppe-2/search-engine:sha-<commit>`.
+
+**Rulle tilbage**
+```bash
+IMAGE=ghcr.io/devops-gruppe-2/search-engine:sha-<gammel commit>
+docker pull $IMAGE
+docker stop whoknows-backend && docker rm whoknows-backend
+docker run -d --name whoknows-backend --restart unless-stopped -p 80:8080 -v /opt/whoknows/app.db:/app/app.db $IMAGE
+```
+
+---
+
 ## 2026-11-03 · Branch protection på main (GitHub-indstilling, PR #47)
 
 **Hvad**
