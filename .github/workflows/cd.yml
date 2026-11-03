@@ -47,6 +47,17 @@ jobs:
             ${{ env.IMAGE_NAME }}:latest
             ${{ env.IMAGE_NAME }}:sha-${{ env.COMMIT_SHA }}
 
+      # Nginx-imaget med HTTPS-konfigurationen. Det ligger i samme pakke som appen
+      # (tag nginx-sha-<commit>), så serveren kan hente det uden at logge ind på ghcr.io
+      - name: Build and push Nginx image
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: ./nginx
+          push: true
+          tags: |
+            ${{ env.IMAGE_NAME }}:nginx-latest
+            ${{ env.IMAGE_NAME }}:nginx-sha-${{ env.COMMIT_SHA }}
+
       # Deploy med almindelig ssh i stedet for en tredjeparts-action,
       # så vores private nøgle ikke gives til fremmed kode
       - name: Deploy to DigitalOcean droplet
@@ -62,21 +73,27 @@ jobs:
           chmod 600 ~/.ssh/deploy_key
           ssh-keyscan -H "$VM_HOST" >> ~/.ssh/known_hosts
 
-          # Serveren kører præcis det image, CI har testet (sha-tagget), ikke bare "latest"
+          # Kopiér compose-filen til serveren
+          scp -i ~/.ssh/deploy_key -o BatchMode=yes compose.prod.yml \
+            "$VM_USER@$VM_HOST:/opt/whoknows/compose.prod.yml"
+
+          # Start appen og Nginx med præcis de images, CI har testet (sha-tagget)
           ssh -i ~/.ssh/deploy_key -o BatchMode=yes "$VM_USER@$VM_HOST" \
-            "IMAGE=$IMAGE_NAME:sha-$COMMIT_SHA bash -s" << 'EOF'
+            "IMAGE_SHA=$COMMIT_SHA bash -s" << 'EOF'
             set -e
-            docker pull "$IMAGE"
+            cd /opt/whoknows
 
-            docker stop whoknows-backend || true
-            docker rm whoknows-backend || true
+            docker compose -f compose.prod.yml pull
 
-            docker run -d \
-              --name whoknows-backend \
-              --restart unless-stopped \
-              -p 80:8080 \
-              -v /opt/whoknows/app.db:/app/app.db \
-              "$IMAGE"
+            # Den gamle container blev startet med "docker run" og ikke compose.
+            # Den fjernes, så compose kan overtage navnet og port 80.
+            if docker inspect whoknows-backend >/dev/null 2>&1 && \
+               [ -z "$(docker inspect -f '{{ index .Config.Labels "com.docker.compose.project" }}' whoknows-backend)" ]; then
+              docker rm -f whoknows-backend
+            fi
+
+            docker compose -f compose.prod.yml up -d --remove-orphans
+            docker image prune -f
           EOF
 
       - name: Remove SSH key

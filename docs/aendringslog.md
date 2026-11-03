@@ -6,6 +6,35 @@ Hver ændring i koden laves på en branch og merges til `main` via en pull reque
 
 ---
 
+## 2026-11-04 · HTTPS med Nginx og Let's Encrypt (branch `feature/https`, PR ikke oprettet endnu)
+
+**Hvad**
+- **Certifikat:** Hentet fra Let's Encrypt med certbot (Docker, `--standalone`) for `whoknows-gruppe2.dk`. Ligger på serveren i `/etc/letsencrypt/live/whoknows-gruppe2.dk/` og udløber 1. feb. 2027. Appen var stoppet i 12 sekunder, mens certifikatet blev lavet. Ingen mail er registreret hos Let's Encrypt.
+- **`nginx/nginx.prod.conf`:** Nginx-konfiguration til serveren:
+  - `http://whoknows-gruppe2.dk` sendes videre til `https://` (301).
+  - Port 443 bruger certifikatet med TLS 1.2 og 1.3 og sender `Strict-Transport-Security`.
+  - Kald direkte på IP-adressen (fx simulatoren via `repositories.py`) virker stadig over http, fordi certifikatet kun gælder for domænet.
+  - `/.well-known/acme-challenge/` bruges til at forny certifikatet uden at stoppe Nginx.
+- **`nginx/Dockerfile`:** eget Nginx-image med konfigurationen bygget ind, låst til `nginx:1.30.6-alpine`.
+- **`compose.prod.yml`:** appen og Nginx kører sammen på serveren. Appen er kun tilgængelig for Nginx (`expose`), ikke direkte fra internettet.
+- **`cd.yml`:** bygger også Nginx-imaget (tag `nginx-sha-<commit>` i samme pakke som appen), kopierer `compose.prod.yml` til serveren og starter begge med `docker compose`.
+- `nginx/nginx.conf` og `compose.yml` er uændrede og bruges stadig lokalt og i CI.
+
+**Hvorfor**
+- Opgaven *Setup HTTPS* (uge 9), efter Anders' eksempel i `whoknows_variations` (branch `tls`).
+- Uden HTTPS sendes passwords og session-cookies ukrypteret over nettet.
+
+**Testet lokalt**
+- Nginx-imaget og appen kørt sammen i Docker med et testcertifikat: `nginx -t` OK, IP over http giver 200, domæne over http giver 301 til https, https giver 200, `/api/search` virker, HSTS-header er sat, og acme-stien virker.
+- Hadolint godkender `nginx/Dockerfile`.
+
+**Mangler**
+- PR og merge, så CD deployer det.
+- Automatisk fornyelse af certifikatet (cron med certbot `--webroot` og `nginx -s reload`), når Nginx kører på serveren.
+- Opdatere `repositories.py` hos underviseren og Postman-monitoren til `https://whoknows-gruppe2.dk/`.
+
+---
+
 ## 2026-11-03 · PR- og issue-templates (PR #49)
 
 **Hvad**
