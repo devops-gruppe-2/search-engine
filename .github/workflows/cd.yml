@@ -1,9 +1,13 @@
 name: CD
 
+# Kører først når CI er færdig på main, og kun hvis CI er grøn (se "if" nedenfor).
+# workflow_dispatch gør det muligt at deploye igen manuelt fra Actions-fanen.
 on:
-  push:
-    branches:
-      - main
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -12,10 +16,18 @@ permissions:
 jobs:
   docker-publish:
     runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push')
+
+    env:
+      IMAGE_NAME: ghcr.io/devops-gruppe-2/search-engine
+      # Den commit CI testede. Ved manuel kørsel bruges den nyeste commit på main.
+      COMMIT_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          ref: ${{ env.COMMIT_SHA }}
 
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
@@ -24,12 +36,16 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      # Imaget får to tags: latest og sha-<commit>, så man kan se hvilken version der kører
+      # og rulle tilbage til en tidligere version
       - name: Build and push Docker image
         uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
         with:
           context: ./backend
           push: true
-          tags: ghcr.io/devops-gruppe-2/search-engine:latest
+          tags: |
+            ${{ env.IMAGE_NAME }}:latest
+            ${{ env.IMAGE_NAME }}:sha-${{ env.COMMIT_SHA }}
 
       # Deploy med almindelig ssh i stedet for en tredjeparts-action,
       # så vores private nøgle ikke gives til fremmed kode
@@ -46,9 +62,11 @@ jobs:
           chmod 600 ~/.ssh/deploy_key
           ssh-keyscan -H "$VM_HOST" >> ~/.ssh/known_hosts
 
-          ssh -i ~/.ssh/deploy_key -o BatchMode=yes "$VM_USER@$VM_HOST" << 'EOF'
+          # Serveren kører præcis det image, CI har testet (sha-tagget), ikke bare "latest"
+          ssh -i ~/.ssh/deploy_key -o BatchMode=yes "$VM_USER@$VM_HOST" \
+            "IMAGE=$IMAGE_NAME:sha-$COMMIT_SHA bash -s" << 'EOF'
             set -e
-            docker pull ghcr.io/devops-gruppe-2/search-engine:latest
+            docker pull "$IMAGE"
 
             docker stop whoknows-backend || true
             docker rm whoknows-backend || true
@@ -58,7 +76,7 @@ jobs:
               --restart unless-stopped \
               -p 80:8080 \
               -v /opt/whoknows/app.db:/app/app.db \
-              ghcr.io/devops-gruppe-2/search-engine:latest
+              "$IMAGE"
           EOF
 
       - name: Remove SSH key

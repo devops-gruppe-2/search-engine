@@ -4,15 +4,13 @@ on:
   push:
     branches:
       - main
-      - feature/ci-cd
-      - feature/smoke-testing
 
   pull_request:
     branches:
       - main
 
 jobs:
-  # Static analysis af Go-koden med samme regler som lokalt (backend/.golangci.yml)
+  # Static analysis af Go-koden (backend/.golangci.yml) og af Dockerfilen
   lint:
     runs-on: ubuntu-latest
 
@@ -32,17 +30,18 @@ jobs:
           version: v2.14.0
           working-directory: backend
 
-  test-build:
+      - name: Lint Dockerfile with Hadolint
+        uses: hadolint/hadolint-action@54c9adbab1582c2ef04b2016b760714a4bfde3cf # v3.1.0
+        with:
+          dockerfile: backend/Dockerfile
+
+  # Go-tests
+  test:
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
-
-      - name: Lint Dockerfile with Hadolint
-        uses: hadolint/hadolint-action@54c9adbab1582c2ef04b2016b760714a4bfde3cf # v3.1.0
-        with:
-          dockerfile: backend/Dockerfile
 
       - name: Set up Go
         uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
@@ -50,13 +49,25 @@ jobs:
           go-version-file: backend/go.mod
           cache-dependency-path: backend/go.sum
 
-      - name: Download dependencies
-        working-directory: backend
-        run: go mod download
-
       - name: Run tests
         working-directory: backend
         run: go test ./...
+
+  # Bygger appen og Docker-imaget og tjekker at det hele starter (smoke test).
+  # Kører kun hvis lint og test er grønne.
+  build:
+    runs-on: ubuntu-latest
+    needs: [lint, test]
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+
+      - name: Set up Go
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version-file: backend/go.mod
+          cache-dependency-path: backend/go.sum
 
       - name: Build backend
         working-directory: backend
