@@ -6,6 +6,24 @@ Hver ændring i koden laves på en branch og merges til `main` via en pull reque
 
 ---
 
+## 2026-11-03 · PR- og issue-templates (PR #49)
+
+**Hvad**
+- `.github/PULL_REQUEST_TEMPLATE.md`: hver ny PR starter med felterne *Hvad*, *Hvorfor* og *Hvordan er det testet*, og en tjekliste: grøn CI, ændringslog opdateret, ingen hemmeligheder i koden, endpoints følger OpenAPI.
+- `.github/ISSUE_TEMPLATE/bug_report.yml`: formular til fejl med hvad der sker, hvordan man genskaber den, hvad der burde ske, hvor fejlen sker og log. Får labelen `bug`.
+- `.github/ISSUE_TEMPLATE/feature_request.yml`: formular til nye funktioner og kursusopgaver med hvad, hvorfor, hvornår den er færdig, og link til opgaven. Får labelen `enhancement`.
+- `.github/ISSUE_TEMPLATE/config.yml`: tomme issues er stadig tilladt.
+
+**Hvorfor**
+- Opgaverne *GitHub Pull Request template* (uge 3), *Create an issue template* (uge 4) og *Create an issue template* (uge 7).
+- Alle PR'er og issues bliver skrevet på samme måde, så det er nemt at se, hvad en ændring gør, og hvornår en opgave er færdig. Tjeklisten minder om ændringsloggen.
+
+**Se at det virker**
+- *Pull requests → New pull request*: beskrivelsen er udfyldt med skabelonen.
+- *Issues → New issue*: man kan vælge mellem *Fejl* og *Ny funktion eller opgave*.
+
+---
+
 ## 2026-11-03 · CI/CD-oprydning (PR #48)
 
 **Hvad**
