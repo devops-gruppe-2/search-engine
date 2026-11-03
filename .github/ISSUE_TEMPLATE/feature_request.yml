@@ -1,0 +1,37 @@
+name: Ny funktion eller opgave
+description: En ny funktion, en forbedring eller en opgave fra kurset
+title: "[Opgave] "
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: Hvad skal laves?
+    validations:
+      required: true
+
+  - type: textarea
+    id: why
+    attributes:
+      label: Hvorfor?
+      description: Hvilket problem løser det, eller hvilken opgave fra semesterplanen hører det til?
+    validations:
+      required: true
+
+  - type: textarea
+    id: done
+    attributes:
+      label: Hvornår er den færdig?
+      description: Hvad skal virke, før opgaven kan lukkes?
+      placeholder: |
+        - [ ] /api/weather returnerer vejrdata som JSON
+        - [ ] Der er en test for endpointet
+        - [ ] Ændringsloggen er opdateret
+    validations:
+      required: true
+
+  - type: input
+    id: assignment
+    attributes:
+      label: Link til opgaven
+      description: Hvis det er en opgave fra kurset, link til den i semester-repoet.
