@@ -1,0 +1,49 @@
+name: Fejl
+description: Noget virker ikke som det skal
+title: "[Fejl] "
+labels: ["bug"]
+body:
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: Hvad sker der?
+      description: Beskriv fejlen.
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Sådan genskaber man fejlen
+      description: Trin for trin, så en anden kan se den samme fejl.
+      placeholder: |
+        1. Gå til /login
+        2. Skriv brugernavn og password
+        3. Klik på "Log In"
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Hvad burde der ske?
+    validations:
+      required: true
+
+  - type: dropdown
+    id: where
+    attributes:
+      label: Hvor sker fejlen?
+      options:
+        - På serveren (whoknows-gruppe2.dk)
+        - Lokalt
+        - I CI/CD (GitHub Actions)
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Log eller fejlbesked
+      description: Fx output fra `docker logs whoknows-backend` eller fra GitHub Actions.
+      render: shell
