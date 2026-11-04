@@ -1,0 +1,25 @@
+# Bruges på serveren af CD (kopieres til /opt/whoknows/compose.prod.yml).
+# IMAGE_SHA sættes af CD til den commit, CI har testet.
+services:
+  backend:
+    image: ghcr.io/devops-gruppe-2/search-engine:sha-${IMAGE_SHA:?IMAGE_SHA skal være sat}
+    container_name: whoknows-backend
+    volumes:
+      - /opt/whoknows/app.db:/app/app.db
+    # Kun Nginx kan nå appen. Den er ikke åben direkte mod internettet.
+    expose:
+      - "8080"
+    restart: unless-stopped
+
+  nginx:
+    image: ghcr.io/devops-gruppe-2/search-engine:nginx-sha-${IMAGE_SHA:?IMAGE_SHA skal være sat}
+    container_name: whoknows-nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - /etc/letsencrypt:/etc/letsencrypt:ro
+      - /var/www/certbot:/var/www/certbot:ro
+    depends_on:
+      - backend
+    restart: unless-stopped
