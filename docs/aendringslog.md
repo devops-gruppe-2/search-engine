@@ -6,7 +6,7 @@ Hver ændring i koden laves på en branch og merges til `main` via en pull reque
 
 ---
 
-## 2026-11-04 · HTTPS med Nginx og Let's Encrypt (branch `feature/https`, PR ikke oprettet endnu)
+## 2026-11-04 · HTTPS med Nginx og Let's Encrypt (PR #50)
 
 **Hvad**
 - **Certifikat:** Hentet fra Let's Encrypt med certbot (Docker, `--standalone`) for `whoknows-gruppe2.dk`. Ligger på serveren i `/etc/letsencrypt/live/whoknows-gruppe2.dk/` og udløber 1. feb. 2027. Appen var stoppet i 12 sekunder, mens certifikatet blev lavet. Ingen mail er registreret hos Let's Encrypt.
@@ -28,10 +28,18 @@ Hver ændring i koden laves på en branch og merges til `main` via en pull reque
 - Nginx-imaget og appen kørt sammen i Docker med et testcertifikat: `nginx -t` OK, IP over http giver 200, domæne over http giver 301 til https, https giver 200, `/api/search` virker, HSTS-header er sat, og acme-stien virker.
 - Hadolint godkender `nginx/Dockerfile`.
 
-**Mangler**
-- PR og merge, så CD deployer det.
-- Automatisk fornyelse af certifikatet (cron med certbot `--webroot` og `nginx -s reload`), når Nginx kører på serveren.
-- Opdatere `repositories.py` hos underviseren og Postman-monitoren til `https://whoknows-gruppe2.dk/`.
+**Efter merge**
+- CD erstattede den gamle `docker run`-container med `whoknows-backend` og `whoknows-nginx` via compose. Port 8080 er ikke længere åben udefra.
+- Tjekket på serveren: `https://whoknows-gruppe2.dk` giver 200 med gyldigt certifikat, `http://whoknows-gruppe2.dk` giver 301 til https, `http://157.245.66.153` giver stadig 200, og HSTS-headeren er sat.
+
+**Fornyelse af certifikatet**
+- `/opt/whoknows/renew-cert.sh` kører certbot med `--webroot` (Nginx kører videre) og genindlæser Nginx bagefter med `nginx -s reload`.
+- Cron hos root kører den hver nat kl. 03:30 og logger til `/var/log/renew-cert.log`. Certbot fornyer kun, når der er under 30 dage tilbage.
+- Certbot venter med vilje et tilfældigt antal minutter, når den kører automatisk. Test derfor med: `/opt/whoknows/renew-cert.sh --dry-run --no-random-sleep-on-renew` (bestod 2026-11-04).
+
+**Opdateret andre steder**
+- `repositories.py` hos underviseren: PR #44 i underviserens repo ændrer `backend` og `frontend` til `https://whoknows-gruppe2.dk/`.
+- Postman-monitoren *WhoKnows Uptime* kalder nu `https://whoknows-gruppe2.dk/api/search?q=test`.
 
 ---
 
