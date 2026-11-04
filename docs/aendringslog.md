@@ -6,6 +6,23 @@ Hver ændring i koden laves på en branch og merges til `main` via en pull reque
 
 ---
 
+## 2026-11-04 · fail2ban på serveren (server-ændring)
+
+**Hvad**
+- `fail2ban` er installeret på dropletten og slået til ved opstart (`systemctl enable --now fail2ban`).
+- Ubuntus standardopsætning bruges: jail'en `sshd` læser SSH-loggen (systemd journal) og blokerer en IP med nftables i 10 minutter efter 5 mislykkede login-forsøg inden for 10 minutter.
+- Login med password var allerede slået fra (`PasswordAuthentication no`), så man kun kan logge ind med SSH-nøgle.
+
+**Hvorfor**
+- Opgaven *fail2ban* (uge 9).
+- Fra 25. okt. til 4. nov. var der over 5.500 mislykkede login-forsøg fra over 700 forskellige IP-adresser i `/var/log/auth.log`. Robotterne kan ikke komme ind uden nøgle, men de fylder loggen og bruger ressourcer.
+
+**Se at det virker**
+- `sudo fail2ban-client status sshd` viser antal mislykkede forsøg og hvilke IP'er der er blokeret. Den første IP blev blokeret få sekunder efter start.
+- Vores egne logins og GitHub Actions bruger SSH-nøgle, så de fejler ikke og bliver ikke blokeret.
+
+---
+
 ## 2026-11-04 · HTTPS med Nginx og Let's Encrypt (PR #50)
 
 **Hvad**
