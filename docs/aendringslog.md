@@ -6,6 +6,34 @@ Hver ændring i koden laves på en branch og merges til `main` via en pull reque
 
 ---
 
+## 2026-11-05 · Bcrypt og Security Breach (PR #53)
+
+**Hvad**
+- Passwords gemmes nu som **bcrypt-hash** i stedet for klartekst (`hashPassword` og `checkPassword` i `backend/main.go`). Det gælder både register, login og skift af password.
+- Ny kolonne `must_change_password` i `users`.
+- `migrateUsers` kører ved opstart: den tilføjer kolonnen, hasher alle passwords der stadig står i klartekst, og markerer de brugere som `must_change_password = 1`. Den kan køre flere gange uden at gøre skade, fordi den kun rører passwords, der ikke allerede er hashes.
+- Ny side `/change-password` og nyt endpoint `POST /api/change-password`:
+  - Siden fortæller brugeren om sikkerhedsbruddet.
+  - Det nye password skal have mindst 8 tegn, skrives to gange ens og være forskelligt fra det gamle.
+- Middleware `requirePasswordChange`: en bruger, der skal skifte password, bliver sendt til skifte-siden fra alle andre sider. API-kald får `403`. Kun skifte-siden, logout og CSS er tilladt.
+- Login giver `403` med "Password must be changed" for API-kald og sender browseren til `/change-password`, når brugeren er markeret.
+
+**Hvorfor**
+- Opgaven *Security Breach* (uge 9): hackeren har adgang til databasen, og brugerne skal informeres og tvinges til at skifte password.
+- Passwords i klartekst betyder, at alle kan læse dem, hvis databasen bliver stjålet. Bcrypt er langsom med vilje og bruger salt, så de ikke kan slås op i tabeller eller gættes hurtigt.
+- Hele databasen må anses som kompromitteret, så **alle eksisterende brugere** skal skifte password, ikke kun de 20 fra listen på Teams. De brugere fra listen, vi har tjekket, findes ikke længere i databasen, fordi `DROP TABLE users` slettede brugere ved hvert deploy indtil PR #35.
+
+**Se at det virker**
+- Testet i Docker mod en gammel database med klartekst: migrering, login med 403 og redirect, blokering af andre sider, alle tre valideringsregler, skift af password, gammelt password afvist, nyt password virker, nye brugere får hash uden tvang, og genstart hasher ikke igen.
+- `golangci-lint`: 0 issues.
+
+**Bemærk**
+- Første opstart på serveren hasher alle eksisterende brugere. Det tager ca. 1 minut, og siden svarer ikke imens.
+- Backups fra før denne ændring i `/opt/whoknows/db-backups` indeholder stadig klartekst-passwords. De bliver slettet automatisk efter 14 dage.
+- Brugere fra simulatoren bliver også tvunget til at skifte password og får `403` ved login, indtil de har gjort det.
+
+---
+
 ## 2026-11-04 · fail2ban på serveren (server-ændring)
 
 **Hvad**
