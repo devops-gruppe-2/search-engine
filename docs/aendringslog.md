@@ -6,7 +6,7 @@ Hver ændring i koden laves på en branch og merges til `main` via en pull reque
 
 ---
 
-## 2026-11-05 · Bcrypt og Security Breach (branch `feature/bcrypt`)
+## 2026-11-05 · Bcrypt og Security Breach (PR #53)
 
 **Hvad**
 - Passwords gemmes nu som **bcrypt-hash** i stedet for klartekst (`hashPassword` og `checkPassword` i `backend/main.go`). Det gælder både register, login og skift af password.
