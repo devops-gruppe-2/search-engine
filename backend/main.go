@@ -12,6 +12,7 @@ import (
 	"github.com/gin-contrib/sessions"
 	"github.com/gin-contrib/sessions/cookie"
 	"github.com/gin-gonic/gin"
+	"golang.org/x/crypto/bcrypt"
 	_ "modernc.org/sqlite"
 )
 
@@ -22,6 +23,12 @@ import (
 //go:embed schema.sqlite
 var schemaSQL string
 var db *sql.DB
+
+// Krav til nye passwords
+const minPasswordLength = 8
+
+// bcrypt bruger kun de første 72 bytes af et password
+const maxPasswordBytes = 72
 
 type APIUserCreatedResponse struct {
 	Status  string `json:"status"`
@@ -88,11 +95,13 @@ func main() {
 	})
 
 	router.Use(sessions.Sessions("user_session", store))
+	router.Use(requirePasswordChange)
 
 	router.LoadHTMLFiles(
 		"templates/search.html",
 		"templates/register.html",
 		"templates/login.html",
+		"templates/change_password.html",
 		"templates/header.html",
 	)
 
@@ -115,12 +124,22 @@ func main() {
 		c.HTML(http.StatusOK, "login.html", pageData(c, gin.H{}))
 	})
 
+	// Brugere ramt af sikkerhedsbruddet skal vælge et nyt password her
+	router.GET("/change-password", func(c *gin.Context) {
+		if !isLoggedIn(c) {
+			c.Redirect(http.StatusSeeOther, "/login")
+			return
+		}
+		c.HTML(http.StatusOK, "change_password.html", pageData(c, gin.H{"MustChange": mustChangePassword(c)}))
+	})
+
 	// Forsiden er søgesiden, ligesom i legacy
 	router.GET("/", HTMLSearchFunctionData)
 
 	router.POST("/api/register", registerUser)
 	router.GET("/api/search", SearchAPI)
 	router.POST("/api/login", loginUser)
+	router.POST("/api/change-password", changePassword)
 	router.GET("/search", HTMLSearchFunctionData)
 	// OpenAPI-spec'en siger GET, POST beholdes så eksisterende klienter ikke går i stykker
 	router.GET("/api/logout", logoutUser)
@@ -163,7 +182,88 @@ func initDB(dbPath string) (*sql.DB, error) {
 		}
 	}
 
+	if err := migrateUsers(ctx, db); err != nil {
+		return nil, fmt.Errorf("failed to migrate users: %w", err)
+	}
+
 	return db, nil
+}
+
+// migrateUsers gør en database fra før bcrypt klar. Den er sikker at køre ved hver opstart,
+// fordi den kun rører brugere der stadig har et password i klartekst.
+func migrateUsers(ctx context.Context, db *sql.DB) error {
+	var columns int
+	query := "SELECT COUNT(*) FROM pragma_table_info('users') WHERE name = 'must_change_password'"
+	if err := db.QueryRowContext(ctx, query).Scan(&columns); err != nil {
+		return err
+	}
+	if columns == 0 {
+		alter := "ALTER TABLE users ADD COLUMN must_change_password INTEGER NOT NULL DEFAULT 0"
+		if _, err := db.ExecContext(ctx, alter); err != nil {
+			return err
+		}
+	}
+
+	// bcrypt-hashes starter altid med $2, så alt andet er klartekst
+	rows, err := db.QueryContext(ctx, "SELECT id, password FROM users WHERE password NOT LIKE '$2%'")
+	if err != nil {
+		return err
+	}
+	defer func() { _ = rows.Close() }()
+
+	type plainUser struct {
+		id       int
+		password string
+	}
+	var users []plainUser
+	for rows.Next() {
+		var user plainUser
+		if err := rows.Scan(&user.id, &user.password); err != nil {
+			return err
+		}
+		users = append(users, user)
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+
+	// Klartekst-passwords må anses som stjålet (Security Breach), så brugerne skal også vælge et nyt
+	update := "UPDATE users SET password = ?, must_change_password = 1 WHERE id = ?"
+	for _, user := range users {
+		hash, err := hashPassword(user.password)
+		if err != nil {
+			return err
+		}
+		if _, err := db.ExecContext(ctx, update, hash, user.id); err != nil {
+			return err
+		}
+	}
+
+	if len(users) > 0 {
+		log.Printf("Hashed passwords for %d users", len(users))
+	}
+	return nil
+}
+
+// hashPassword laver et bcrypt-hash. bcrypt afviser passwords over 72 bytes,
+// så de bliver forkortet her, både når de gemmes og når de tjekkes.
+func hashPassword(password string) (string, error) {
+	if len(password) > maxPasswordBytes {
+		password = password[:maxPasswordBytes]
+	}
+	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	if err != nil {
+		return "", err
+	}
+	return string(hash), nil
+}
+
+// checkPassword tjekker et password mod et gemt bcrypt-hash
+func checkPassword(hash, password string) bool {
+	if len(password) > maxPasswordBytes {
+		password = password[:maxPasswordBytes]
+	}
+	return bcrypt.CompareHashAndPassword([]byte(hash), []byte(password)) == nil
 }
 
 //==============================================================================================================================================================================
@@ -178,6 +278,34 @@ func wantsHTML(c *gin.Context) bool {
 // isLoggedIn tjekker om der er en bruger gemt i sessionen
 func isLoggedIn(c *gin.Context) bool {
 	return sessions.Default(c).Get("username") != nil
+}
+
+// mustChangePassword tjekker om den indloggede bruger skal vælge et nyt password
+func mustChangePassword(c *gin.Context) bool {
+	return sessions.Default(c).Get("must_change_password") == true
+}
+
+// requirePasswordChange sender brugere, der skal skifte password, til skifte-siden,
+// så de ikke kan bruge resten af systemet først
+func requirePasswordChange(c *gin.Context) {
+	path := c.Request.URL.Path
+	allowed := path == "/change-password" || path == "/api/change-password" ||
+		path == "/api/logout" || strings.HasPrefix(path, "/static/")
+
+	if allowed || !mustChangePassword(c) {
+		c.Next()
+		return
+	}
+
+	if wantsHTML(c) {
+		c.Redirect(http.StatusSeeOther, "/change-password")
+	} else {
+		c.JSON(http.StatusForbidden, AuthResponse{
+			StatusCode: http.StatusForbidden,
+			Message:    "Password must be changed",
+		})
+	}
+	c.Abort()
 }
 
 // pageData tilføjer login-status, som headeren bruger til at vise log ind/log ud
@@ -214,8 +342,22 @@ func registerUser(c *gin.Context) {
 		})
 		return
 	}
+	hash, err := hashPassword(password)
+	if err != nil {
+		if wantsHTML(c) {
+			formData["Error"] = "Failed to register user"
+			c.HTML(http.StatusInternalServerError, "register.html", pageData(c, formData))
+			return
+		}
+		c.JSON(http.StatusInternalServerError, APIUserCreatedResponse{
+			Status:  "error",
+			Message: "Failed to register user",
+		})
+		return
+	}
+
 	query := "INSERT INTO users (username, email, password) VALUES (?, ?, ?)"
-	_, err := db.ExecContext(c.Request.Context(), query, username, email, password)
+	_, err = db.ExecContext(c.Request.Context(), query, username, email, hash)
 	if err != nil {
 		if wantsHTML(c) {
 			formData["Error"] = "Failed to register user"
@@ -269,11 +411,13 @@ func loginUser(c *gin.Context) {
 		return
 	}
 
-	//Opretter variabel, som holder det password, vi skal finde i databasen
-	var storedPassword string
-	//Vi laver query her, som betyder: find passwordet for denne bruger, hvis brugernavnet passer
-	query := "SELECT password FROM users WHERE username =?"
-	err := db.QueryRowContext(c.Request.Context(), query, username).Scan(&storedPassword)
+	//Opretter variabler, som holder det password-hash, vi skal finde i databasen,
+	//og om brugeren skal skifte password
+	var storedHash string
+	var mustChange bool
+	//Vi laver query her, som betyder: find hashet for denne bruger, hvis brugernavnet passer
+	query := "SELECT password, must_change_password FROM users WHERE username =?"
+	err := db.QueryRowContext(c.Request.Context(), query, username).Scan(&storedHash, &mustChange)
 
 	//Hvis der skulle opstå en fejl under databaseopslaget
 	if err != nil {
@@ -283,7 +427,7 @@ func loginUser(c *gin.Context) {
 		return
 	}
 
-	if password != storedPassword {
+	if !checkPassword(storedHash, password) {
 		loginFailed(http.StatusUnauthorized, "Invalid username or password")
 		return
 	}
@@ -293,10 +437,24 @@ func loginUser(c *gin.Context) {
 
 	// Gem brugernavnet i sessionen
 	session.Set("username", username)
+	session.Set("must_change_password", mustChange)
 
 	// Gem sessionen og send cookien tilbage til browseren
 	if err := session.Save(); err != nil {
 		loginFailed(http.StatusInternalServerError, "Failed to create session")
+		return
+	}
+
+	// Password fra før bcrypt: brugeren skal vælge et nyt, før noget andet virker
+	if mustChange {
+		if wantsHTML(c) {
+			c.Redirect(http.StatusSeeOther, "/change-password")
+			return
+		}
+		c.JSON(http.StatusForbidden, AuthResponse{
+			StatusCode: http.StatusForbidden,
+			Message:    "Password must be changed",
+		})
 		return
 	}
 
@@ -308,6 +466,86 @@ func loginUser(c *gin.Context) {
 	c.JSON(http.StatusOK, AuthResponse{
 		StatusCode: http.StatusOK,
 		Message:    "Login successful",
+	})
+}
+
+// changePassword gemmer et nyt password for den indloggede bruger
+func changePassword(c *gin.Context) {
+	session := sessions.Default(c)
+	username, ok := session.Get("username").(string)
+	if !ok {
+		if wantsHTML(c) {
+			c.Redirect(http.StatusSeeOther, "/login")
+			return
+		}
+		c.JSON(http.StatusUnauthorized, AuthResponse{
+			StatusCode: http.StatusUnauthorized,
+			Message:    "You are not logged in",
+		})
+		return
+	}
+
+	password := c.PostForm("password")
+	password2 := c.PostForm("password2")
+
+	// Browseren får siden igen med en fejlbesked, alle andre får JSON
+	changeFailed := func(status int, message string) {
+		if wantsHTML(c) {
+			c.HTML(status, "change_password.html", pageData(c, gin.H{
+				"MustChange": mustChangePassword(c),
+				"Error":      message,
+			}))
+			return
+		}
+		c.JSON(status, AuthResponse{StatusCode: status, Message: message})
+	}
+
+	if len(password) < minPasswordLength {
+		changeFailed(http.StatusUnprocessableEntity, fmt.Sprintf("Password must be at least %d characters", minPasswordLength))
+		return
+	}
+	if password != password2 {
+		changeFailed(http.StatusUnprocessableEntity, "The two passwords do not match")
+		return
+	}
+
+	// Det gamle password må anses som stjålet, så det må ikke bruges igen
+	var storedHash string
+	query := "SELECT password FROM users WHERE username = ?"
+	if err := db.QueryRowContext(c.Request.Context(), query, username).Scan(&storedHash); err != nil {
+		changeFailed(http.StatusInternalServerError, "Failed to change password")
+		return
+	}
+	if checkPassword(storedHash, password) {
+		changeFailed(http.StatusUnprocessableEntity, "The new password must be different from the old one")
+		return
+	}
+
+	hash, err := hashPassword(password)
+	if err != nil {
+		changeFailed(http.StatusInternalServerError, "Failed to change password")
+		return
+	}
+
+	update := "UPDATE users SET password = ?, must_change_password = 0 WHERE username = ?"
+	if _, err := db.ExecContext(c.Request.Context(), update, hash, username); err != nil {
+		changeFailed(http.StatusInternalServerError, "Failed to change password")
+		return
+	}
+
+	session.Delete("must_change_password")
+	if err := session.Save(); err != nil {
+		changeFailed(http.StatusInternalServerError, "Failed to change password")
+		return
+	}
+
+	if wantsHTML(c) {
+		c.Redirect(http.StatusSeeOther, "/")
+		return
+	}
+	c.JSON(http.StatusOK, AuthResponse{
+		StatusCode: http.StatusOK,
+		Message:    "Password changed",
 	})
 }
 
