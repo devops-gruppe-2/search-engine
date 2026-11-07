@@ -6,6 +6,38 @@ Hver ændring i koden laves på en branch og merges til `main` via en pull reque
 
 ---
 
+## 2026-11-07 · Integrationstests, unit tests og E2E-tests (PR #54)
+
+**Hvad**
+- **Integrationstests** (`backend/integration_test.go`, 12 tests): hver test starter hele appen med `setupRouter()` i en `httptest`-server med sin egen tomme SQLite-database og sender rigtige HTTP-requests med cookies. De tester:
+  - register og login, forkert password, manglende felter, dublet-brugernavn
+  - at passwords gemmes som bcrypt-hash
+  - login i browseren, log ud-linket og logout
+  - søgning, også på sprog, og søgning uden `q`
+  - Security Breach: tvunget password-skift, blokering, de tre valideringsregler, og at det gamle password ikke virker bagefter
+  - at forsiden og login-siden har de selectors, simulatoren bruger
+- **Unit tests** (`backend/password_test.go`, 3 tests): `hashPassword` og `checkPassword` alene: rigtigt og forkert password, salt, og passwords over 72 bytes.
+- **E2E-tests** med Playwright (`e2e/`, 5 tests), opsat som `07._E2E` i semester-repoet: en Chromium-browser søger, registrerer, logger ind og ud, og prøver et forkert password.
+- **CI:** nyt job `e2e`, der starter appen med `docker compose`, kører Playwright og gemmer rapporten som artifact. `test`-jobbet kører `go test -v`. CD venter på hele CI, også `e2e`.
+- **Branch protection:** `e2e` er tilføjet til de krævede checks.
+- `main()` er delt op, så routes og middleware ligger i `setupRouter()`, som testene kan starte.
+- **Fejl fundet af testene og rettet:** søgning gav `500`, hvis en side manglede `last_updated`, fordi `SELECT *` scannede `NULL` ind i en tekst. Søgningen nævner nu kolonnerne og bruger `COALESCE(last_updated, '')`.
+
+**Hvorfor**
+- Opgaven *Implement tests* (uge 9): integrationstests er et krav, E2E-tests tæller som integrationstests, og unit tests er valgfrie, men "nice to have a few".
+- Eksamenskravet *You must perform testing*.
+
+**Testtyper vi ikke har lavet**
+- **Load/performance tests:** appen har få brugere, og simulatoren viser allerede, hvordan den klarer sig under belastning.
+- **Mock-tests af databasen:** vi tester mod en rigtig SQLite-database i en temp-fil i stedet, fordi det er lige så hurtigt og tester de rigtige SQL-queries.
+- **Tests af crawleren:** den kalder Wikipedia over nettet, og den kører kun manuelt.
+
+**Se at det virker**
+- `cd backend && go test ./...` → `ok`
+- GitHub → Actions → CI: jobbene `test` og `e2e` er grønne, og `playwright-report` kan hentes som artifact.
+
+---
+
 ## 2026-11-05 · Bcrypt og Security Breach (PR #53)
 
 **Hvad**
