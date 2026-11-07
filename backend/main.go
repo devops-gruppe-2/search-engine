@@ -24,6 +24,10 @@ import (
 var schemaSQL string
 var db *sql.DB
 
+// Søgning i pages. Kolonnerne nævnes i samme rækkefølge som felterne i SearchResult,
+// og en side uden dato giver en tom tekst i stedet for at få Scan til at fejle.
+const searchQuery = "SELECT title, url, language, COALESCE(last_updated, ''), content FROM pages WHERE language = ? AND content LIKE ?"
+
 // Krav til nye passwords
 const minPasswordLength = 8
 
@@ -77,8 +81,15 @@ func main() {
 
 	fmt.Println("Database initialized successfully")
 
-	// Gin startup
+	router := setupRouter()
 
+	if err := router.Run(":8080"); err != nil {
+		log.Fatalf("Server stopped: %v", err)
+	}
+}
+
+// setupRouter samler alle routes og middleware, så de samme kan bruges af tests
+func setupRouter() *gin.Engine {
 	router := gin.Default()
 
 	// session håndtering middleware
@@ -145,10 +156,7 @@ func main() {
 	router.GET("/api/logout", logoutUser)
 	router.POST("/api/logout", logoutUser)
 
-	if err := router.Run(":8080"); err != nil {
-		log.Fatalf("Server stopped: %v", err)
-	}
-
+	return router
 }
 
 //==============================================================================================================================================================================
@@ -559,7 +567,7 @@ func SearchAPI(c *gin.Context) {
 		return
 	}
 	language := c.DefaultQuery("language", "en")
-	query := "SELECT * FROM pages WHERE language = ? AND content LIKE ?"
+	query := searchQuery
 
 	rows, err := db.QueryContext(c.Request.Context(), query, language, "%"+SearchParameter+"%")
 	if err != nil {
@@ -606,7 +614,7 @@ func HTMLSearchFunctionData(c *gin.Context) {
 		return
 	}
 
-	query := "SELECT * FROM pages WHERE language = ? AND content LIKE ?"
+	query := searchQuery
 	rows, err := db.QueryContext(c.Request.Context(), query, language, "%"+searchParameter+"%")
 	if err != nil {
 		c.HTML(http.StatusInternalServerError, "search.html", pageData(c, gin.H{

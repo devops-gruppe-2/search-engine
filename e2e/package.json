@@ -1,0 +1,13 @@
+{
+  "name": "search-engine-e2e",
+  "version": "1.0.0",
+  "description": "End-to-end tests af search-engine med Playwright",
+  "private": true,
+  "type": "commonjs",
+  "scripts": {
+    "test": "playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.64.1"
+  }
+}
