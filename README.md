@@ -59,6 +59,36 @@ If everything is set up correctly, you will see a green **`golangci-lint...Passe
  
 ---
 
+## 🧪 Tests
+
+| Type | Where | What it tests |
+|---|---|---|
+| Unit tests | `backend/password_test.go` | Password hashing on its own (bcrypt, salt, passwords over 72 bytes) |
+| Integration tests | `backend/integration_test.go` | The whole app (routes, middleware, sessions and a real SQLite database) through HTTP requests: register, login, logout, search, the forced password change and the selectors the simulator uses |
+| End-to-end tests | `e2e/tests/` | A real browser (Playwright) using the site like a user: search, register, log in, log out, wrong password |
+| Smoke test | `scripts/smoke-test.sh` | The app starts in Docker and the front page answers |
+
+All of them run in CI on every pull request (`test`, `e2e` and `build` jobs).
+
+Run the Go tests (each test gets its own temporary database):
+
+```bash
+cd backend
+go test ./...
+```
+
+Run the end-to-end tests against the app started with Docker Compose on port 8080:
+
+```bash
+docker compose up --build -d
+cd e2e
+npm ci
+npx playwright install chromium
+npx playwright test
+```
+
+---
+
 ## ☁️ Server Access
 
 The application is deployed on a DigitalOcean droplet running Ubuntu 26.04 LTS.
