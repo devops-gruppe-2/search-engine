@@ -9,6 +9,10 @@ on:
     branches:
       - main
 
+# CI skal kun læse koden (GitHub Actions security hardening: mindst mulige rettigheder)
+permissions:
+  contents: read
+
 jobs:
   # Static analysis af Go-koden (backend/.golangci.yml) og af Dockerfilen
   lint:
@@ -104,6 +108,30 @@ jobs:
       - name: Stop application
         if: always()
         run: docker compose down
+
+  # Scanner Docker-imagerne for kendte sårbarheder med Trivy (Harden Yourself).
+  # Fejler ved HIGH eller CRITICAL, som der findes en rettelse til.
+  # Trivy køres fra sit Docker-image, låst til et digest, i stedet for trivy-action.
+  trivy:
+    runs-on: ubuntu-latest
+    needs: [lint, test]
+    env:
+      TRIVY_IMAGE: aquasec/trivy:0.69.3@sha256:bcc376de8d77cfe086a917230e818dc9f8528e3c852f7b1aff648949b6258d1c
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+
+      - name: Build images
+        run: |
+          docker build -t whoknows-backend:scan ./backend
+          docker build -t whoknows-nginx:scan ./nginx
+
+      - name: Scan images with Trivy
+        run: |
+          for image in whoknows-backend:scan whoknows-nginx:scan; do
+            docker run --rm -v /var/run/docker.sock:/var/run/docker.sock "$TRIVY_IMAGE"               image --exit-code 1 --severity HIGH,CRITICAL --ignore-unfixed --no-progress "$image"
+          done
 
   # Bygger appen og Docker-imaget og tjekker at det hele starter (smoke test).
   # Kører kun hvis lint og test er grønne.

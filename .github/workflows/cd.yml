@@ -99,3 +99,18 @@ jobs:
       - name: Remove SSH key
         if: always()
         run: rm -f ~/.ssh/deploy_key
+
+      # Tjekker security headers på den deployede side. Giver en advarsel ved under B,
+      # men stopper ikke deployet, fordi det allerede er sket.
+      - name: Check site with Mozilla Observatory
+        run: |
+          sleep 10
+          result=$(curl -s -X POST "https://observatory-api.mdn.mozilla.net/api/v2/scan?host=whoknows-gruppe2.dk")
+          echo "$result"
+          grade=$(echo "$result" | jq -r '.grade')
+          score=$(echo "$result" | jq -r '.score')
+          echo "### Mozilla Observatory: $grade ($score/100)" >> "$GITHUB_STEP_SUMMARY"
+          case "$grade" in
+            A*|B*) ;;
+            *) echo "::warning::Mozilla Observatory grade is $grade ($score/100)" ;;
+          esac

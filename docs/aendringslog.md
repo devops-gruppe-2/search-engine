@@ -6,6 +6,35 @@ Hver ændring i koden laves på en branch og merges til `main` via en pull reque
 
 ---
 
+## 2026-11-08 · Harden Yourself: Trivy, security headers og session-cookie (PR #57)
+
+**Hvad vi fandt (før)**
+- **Mozilla Observatory** gav https://whoknows-gruppe2.dk **C (50/100)**, 3 af 12 tests fejlede: ingen `Content-Security-Policy`, ingen `X-Frame-Options` og ingen `X-Content-Type-Options`. Nginx viste også sin version i `Server`-headeren.
+- **Trivy** fandt 1 HIGH-sårbarhed i backend-imaget: `golang.org/x/net` v0.60.0 (CVE-2026-78661, Denial of Service), rettet i v0.62.0. Nginx-imaget og Debian-pakkerne var rene.
+- Session-cookien var signeret med en nøgle, der stod i koden (`0123456789abcdef…`) og dermed på GitHub. Med den kan alle lave en cookie, hvor de er logget ind som en anden bruger. Cookien var heller ikke `Secure`.
+
+**Hvad vi har ændret**
+- `golang.org/x/net` er opdateret til v0.62.0.
+- `nginx/security-headers.conf` med `Content-Security-Policy`, `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff` og `Referrer-Policy`. Den bruges både på serveren og lokalt/i CI, så E2E-testene tjekker, at siden virker med headerne. `server_tokens off` skjuler Nginx-versionen.
+- Session-nøglen læses fra miljøvariablen `SESSION_KEY`. Uden den laver appen en tilfældig nøgle ved hver opstart (sikker, men brugerne logges ud ved genstart). På serveren kan den sættes i `/opt/whoknows/.env`, som `compose.prod.yml` læser.
+- Session-cookien er `Secure`, når brugeren er på https (Nginx sender `X-Forwarded-Proto`). Over http på IP-adressen (simulatoren) virker login stadig.
+- **CI:** nyt job `trivy`, der bygger begge images og scanner dem. Det fejler ved HIGH eller CRITICAL, som har en rettelse. Trivy køres fra sit Docker-image låst til et digest i stedet for `trivy-action`, fordi trivy-action og Trivy v0.69.4 blev kompromitteret i et supply chain-angreb i marts 2026. CI har nu også `permissions: contents: read`.
+- **Branch protection:** `trivy` er tilføjet til de krævede checks, så en PR med en kendt HIGH- eller CRITICAL-sårbarhed ikke kan merges.
+- **CD:** efter deploy scannes siden med Mozilla Observatory, og karakteren vises i jobbets summary. Under B giver en advarsel.
+- **Tests:** 4 nye Go-tests (`backend/security_test.go`): cookien er `Secure`, `HttpOnly` og `SameSite=Lax` over https, ikke `Secure` over http, og nøglen kommer fra `SESSION_KEY` eller er tilfældig.
+
+**Hvorfor**
+- Opgaven *Harden Yourself* (uge 9): scan koden/containeren og websitet, og overvej at gøre det til en del af CI/CD.
+- Opgaven *Security hardening for GitHub Actions*: mindst mulige rettigheder og låste versioner.
+- Vi har valgt **Trivy** (frem for Snyk og Docker Scout), fordi den ikke kræver en konto eller et token og scanner både Debian-pakker og Go-afhængigheder. **Detectify** kræver en konto. **Lynis** kører på selve serveren og er ikke en del af denne ændring.
+
+**Se at det virker**
+- https://developer.mozilla.org/en-US/observatory/analyze?host=whoknows-gruppe2.dk efter deploy
+- GitHub → Actions → CI: jobbet `trivy` er grønt. CD → summary viser Observatory-karakteren.
+- `curl -I https://whoknows-gruppe2.dk/` viser de nye headers.
+
+---
+
 ## 2026-11-08 · Logget ind direkte efter registrering (PR #56)
 
 **Hvad**

@@ -2,11 +2,13 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
 	"database/sql"
 	_ "embed"
 	"fmt"
 	"log"
 	"net/http"
+	"os"
 	"strings"
 
 	"github.com/gin-contrib/sessions"
@@ -33,6 +35,9 @@ const minPasswordLength = 8
 
 // bcrypt bruger kun de første 72 bytes af et password
 const maxPasswordBytes = 72
+
+// Så længe er man logget ind (sekunder)
+const sessionMaxAge = 86400
 
 type APIUserCreatedResponse struct {
 	Status  string `json:"status"`
@@ -92,20 +97,12 @@ func main() {
 func setupRouter() *gin.Engine {
 	router := gin.Default()
 
-	// session håndtering middleware
-	store := cookie.NewStore(
-		[]byte("0123456789abcdef0123456789abcdef"),
-	)
-
-	store.Options(sessions.Options{
-		Path:     "/",
-		MaxAge:   86400,
-		HttpOnly: true,
-		Secure:   false,
-		SameSite: http.SameSiteLaxMode,
-	})
+	// session håndtering middleware. Nøglen signerer cookien, så brugerne ikke kan ændre den.
+	store := cookie.NewStore(sessionKey())
+	store.Options(cookieOptions(false, sessionMaxAge))
 
 	router.Use(sessions.Sessions("user_session", store))
+	router.Use(secureCookieOverHTTPS)
 	router.Use(requirePasswordChange)
 
 	router.LoadHTMLFiles(
@@ -319,6 +316,47 @@ func requirePasswordChange(c *gin.Context) {
 		})
 	}
 	c.Abort()
+}
+
+// sessionKey læser nøglen til session-cookien fra miljøvariablen SESSION_KEY.
+// Uden den laves en tilfældig nøgle ved hver opstart: det er sikkert, men brugerne
+// bliver logget ud, når appen genstarter.
+func sessionKey() []byte {
+	if key := os.Getenv("SESSION_KEY"); key != "" {
+		return []byte(key)
+	}
+	log.Println("SESSION_KEY is not set, using a random session key")
+	key := make([]byte, 32)
+	if _, err := rand.Read(key); err != nil {
+		log.Fatalf("Failed to create session key: %v", err)
+	}
+	return key
+}
+
+// cookieOptions er indstillingerne for session-cookien. Secure betyder, at browseren
+// kun sender cookien over https.
+func cookieOptions(secure bool, maxAge int) sessions.Options {
+	return sessions.Options{
+		Path:     "/",
+		MaxAge:   maxAge,
+		HttpOnly: true,
+		Secure:   secure,
+		SameSite: http.SameSiteLaxMode,
+	}
+}
+
+// isHTTPS er true, når Nginx har modtaget requesten over https
+func isHTTPS(c *gin.Context) bool {
+	return c.GetHeader("X-Forwarded-Proto") == "https"
+}
+
+// secureCookieOverHTTPS gør session-cookien Secure for brugere på https.
+// Kald direkte på IP-adressen over http (fx simulatoren) virker stadig.
+func secureCookieOverHTTPS(c *gin.Context) {
+	if isHTTPS(c) {
+		sessions.Default(c).Options(cookieOptions(true, sessionMaxAge))
+	}
+	c.Next()
 }
 
 // pageData tilføjer login-status, som headeren bruger til at vise log ind/log ud
@@ -693,13 +731,7 @@ func logoutUser(c *gin.Context) {
 
 	session.Clear()
 
-	session.Options(sessions.Options{
-		Path:     "/",
-		MaxAge:   -1,
-		HttpOnly: true,
-		Secure:   false,
-		SameSite: http.SameSiteLaxMode,
-	})
+	session.Options(cookieOptions(isHTTPS(c), -1))
 
 	if err := session.Save(); err != nil {
 		c.JSON(http.StatusInternalServerError, AuthResponse{
