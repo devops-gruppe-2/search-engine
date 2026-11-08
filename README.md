@@ -68,7 +68,7 @@ If everything is set up correctly, you will see a green **`golangci-lint...Passe
 | End-to-end tests | `e2e/tests/` | A real browser (Playwright) using the site like a user: search, register, log in, log out, wrong password, weather page |
 | Smoke test | `scripts/smoke-test.sh` | The app starts in Docker and the front page answers |
 
-All of them run in CI on every pull request (`test`, `e2e` and `build` jobs).
+All of them run in CI on every pull request (`test`, `e2e` and `build` jobs). `backend/security_test.go` checks the session cookie.
 
 Run the Go tests (each test gets its own temporary database):
 
@@ -96,6 +96,32 @@ npx playwright test
 The backend fetches the forecast from [Open-Meteo](https://open-meteo.com/), which is free and needs no API key. The forecast is cached for 30 minutes (`weatherCacheTTL` in `backend/weather.go`), so Open-Meteo is called at most about 48 times a day no matter how many users visit the page. If Open-Meteo is down, the last cached forecast is shown.
 
 The tests in `backend/weather_test.go` use a fake Open-Meteo server, so they don't need internet access.
+
+---
+
+## 🔒 Security
+
+- **Trivy** scans the backend and Nginx images in CI (`trivy` job) and fails on HIGH or CRITICAL vulnerabilities that have a fix.
+- **Mozilla Observatory** checks the deployed site after every deploy (CD job summary).
+- **Security headers** are set by Nginx in `nginx/security-headers.conf` (CSP, X-Frame-Options, X-Content-Type-Options, Referrer-Policy) plus HSTS on https.
+- **Session cookie** is signed with `SESSION_KEY` and is `Secure` and `HttpOnly` on https. Without `SESSION_KEY` the app creates a random key at startup, which logs users out on every restart.
+
+Set the session key on the droplet once, so users stay logged in across deploys:
+
+```bash
+cd /opt/whoknows
+echo "SESSION_KEY=$(openssl rand -hex 32)" > .env
+chmod 600 .env
+```
+
+The key is picked up on the next deploy. Never commit it to Git.
+
+Run Trivy locally:
+
+```bash
+docker build -t whoknows-backend:scan ./backend
+docker run --rm -v /var/run/docker.sock:/var/run/docker.sock aquasec/trivy:0.69.3 image --severity HIGH,CRITICAL --ignore-unfixed whoknows-backend:scan
+```
 
 ---
 
