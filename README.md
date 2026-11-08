@@ -64,8 +64,8 @@ If everything is set up correctly, you will see a green **`golangci-lint...Passe
 | Type | Where | What it tests |
 |---|---|---|
 | Unit tests | `backend/password_test.go` | Password hashing on its own (bcrypt, salt, passwords over 72 bytes) |
-| Integration tests | `backend/integration_test.go` | The whole app (routes, middleware, sessions and a real SQLite database) through HTTP requests: register, login, logout, search, the forced password change and the selectors the simulator uses |
-| End-to-end tests | `e2e/tests/` | A real browser (Playwright) using the site like a user: search, register, log in, log out, wrong password |
+| Integration tests | `backend/integration_test.go`, `backend/weather_test.go` | The whole app (routes, middleware, sessions and a real SQLite database) through HTTP requests: register (also many users at once), login, logout, search, the forced password change, the selectors the simulator uses, and the weather page against a fake Open-Meteo |
+| End-to-end tests | `e2e/tests/` | A real browser (Playwright) using the site like a user: search, register, log in, log out, wrong password, weather page |
 | Smoke test | `scripts/smoke-test.sh` | The app starts in Docker and the front page answers |
 
 All of them run in CI on every pull request (`test`, `e2e` and `build` jobs).
@@ -86,6 +86,16 @@ npm ci
 npx playwright install chromium
 npx playwright test
 ```
+
+---
+
+## 🌦️ Weather
+
+`/weather` shows the weather forecast for Copenhagen for the next 7 days, and `/api/weather` returns the same data as JSON (`{"data": {...}}`).
+
+The backend fetches the forecast from [Open-Meteo](https://open-meteo.com/), which is free and needs no API key. The forecast is cached for 30 minutes (`weatherCacheTTL` in `backend/weather.go`), so Open-Meteo is called at most about 48 times a day no matter how many users visit the page. If Open-Meteo is down, the last cached forecast is shown.
+
+The tests in `backend/weather_test.go` use a fake Open-Meteo server, so they don't need internet access.
 
 ---
 

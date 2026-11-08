@@ -113,6 +113,7 @@ func setupRouter() *gin.Engine {
 		"templates/register.html",
 		"templates/login.html",
 		"templates/change_password.html",
+		"templates/weather.html",
 		"templates/header.html",
 	)
 
@@ -152,6 +153,8 @@ func setupRouter() *gin.Engine {
 	router.POST("/api/login", loginUser)
 	router.POST("/api/change-password", changePassword)
 	router.GET("/search", HTMLSearchFunctionData)
+	router.GET("/weather", WeatherPage)
+	router.GET("/api/weather", WeatherAPI)
 	// OpenAPI-spec'en siger GET, POST beholdes så eksisterende klienter ikke går i stykker
 	router.GET("/api/logout", logoutUser)
 	router.POST("/api/logout", logoutUser)
@@ -165,7 +168,9 @@ func setupRouter() *gin.Engine {
 
 func initDB(dbPath string) (*sql.DB, error) {
 
-	dsn := dbPath + "?_pragma=foreign_keys(1)"
+	// busy_timeout: når en anden request skriver til databasen, venter vi op til 5 sekunder
+	// på låsen i stedet for at fejle med det samme ("database is locked")
+	dsn := dbPath + "?_pragma=foreign_keys(1)&_pragma=busy_timeout(5000)"
 	db, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open database: %w", err)

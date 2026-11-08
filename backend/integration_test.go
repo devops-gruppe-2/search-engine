@@ -5,6 +5,7 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/cookiejar"
@@ -13,6 +14,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/gin-gonic/gin"
@@ -187,6 +189,47 @@ func TestRegisterRejectsDuplicateUsername(t *testing.T) {
 	})
 	if res.status == http.StatusCreated {
 		t.Fatal("registering the same username twice should fail")
+	}
+}
+
+// Mange brugere, der registrerer sig samtidig, må ikke få "database is locked" (fejl 500)
+func TestManyUsersCanRegisterAtTheSameTime(t *testing.T) {
+	app := newTestApp(t)
+
+	const users = 20
+	statuses := make(chan int, users)
+	var wg sync.WaitGroup
+	for i := range users {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			form := url.Values{
+				"username": {fmt.Sprintf("user%d", i)},
+				"email":    {fmt.Sprintf("user%d@example.com", i)},
+				"password": {"correct-horse"},
+			}
+			req, err := http.NewRequestWithContext(t.Context(), http.MethodPost, app.server.URL+"/api/register", strings.NewReader(form.Encode()))
+			if err != nil {
+				statuses <- 0
+				return
+			}
+			req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+			res, err := http.DefaultClient.Do(req)
+			if err != nil {
+				statuses <- 0
+				return
+			}
+			_ = res.Body.Close()
+			statuses <- res.StatusCode
+		}()
+	}
+	wg.Wait()
+	close(statuses)
+
+	for status := range statuses {
+		if status != http.StatusCreated {
+			t.Fatalf("a registration got status %d, want %d", status, http.StatusCreated)
+		}
 	}
 }
 

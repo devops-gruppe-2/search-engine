@@ -83,3 +83,20 @@ button:active {
 button {
     min-width: 80px;
 }
+
+/* Weather */
+table.weather {
+    border-collapse: collapse;
+    margin: 10px 0;
+}
+
+table.weather th, table.weather td {
+    border-bottom: 1px solid #ddd;
+    padding: 6px 12px;
+    text-align: left;
+}
+
+p.weather-source {
+    color: #888;
+    font-size: 12px;
+}

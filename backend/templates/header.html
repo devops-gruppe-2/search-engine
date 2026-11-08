@@ -11,6 +11,7 @@
   <div class="navigation">
   <nav>
     <h1><a id="nav-logo" href="/">¿Who Knows?</a></h1>
+    <a id="nav-weather" href="/weather">Weather</a>
     {{ if .LoggedIn }}
     <a id="nav-logout" href="/api/logout">Log out [{{ .Username }}]</a>
     {{ else }}

@@ -123,7 +123,7 @@ jobs:
 
       - name: Build backend
         working-directory: backend
-        run: go build -o backend main.go
+        run: go build -o backend .
 
       - name: Start application
         run: docker compose up --build -d
