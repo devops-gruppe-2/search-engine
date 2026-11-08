@@ -6,6 +6,38 @@ Hver ændring i koden laves på en branch og merges til `main` via en pull reque
 
 ---
 
+## 2026-11-08 · Søgning med SQLite FTS5 (PR #58)
+
+**Hvad**
+- Søgningen bruger nu **FTS5** (Full Text Search) i stedet for `content LIKE '%…%'`. Koden ligger i `backend/search.go`.
+- `pages_fts` er en virtuel FTS5-tabel over `title` og `content`. Den gemmer ikke teksten selv (`content='pages'`), men peger på rækkerne i `pages` via `rowid`.
+- Tre **triggers** (`pages_fts_insert`, `pages_fts_update`, `pages_fts_delete`) holder indekset opdateret, når `pages` ændres, også når crawleren skriver til databasen.
+- Ved opstart laves tabellen og triggerne, hvis de mangler, og indekset bygges fra `pages` (`'rebuild'`). Så får databasen på serveren et indeks med de sider, der allerede findes, uden at vi skal gøre noget manuelt.
+- Resultaterne sorteres efter **relevans** med `bm25`. Et ord i titlen tæller 10 gange så meget som et ord i teksten. Højst 50 resultater.
+- `tokenize='porter unicode61'`: "languages" finder også "language", og æ, ø, å virker.
+- Hvert ord i søgningen sættes i anførselstegn (`ftsQuery`), så tegn som `"`, `-`, `*` og ord som `AND`/`NOT` ikke giver fejl. Alle ordene skal findes på siden.
+- `SearchAPI` og `HTMLSearchFunctionData` bruger nu samme funktion, `searchPages`, i stedet for to kopier af den samme kode.
+- **Tests** (`backend/search_test.go`): relevans, ordformer, flere ord, specialtegn, at triggerne følger med ved update og delete, at en gammel database uden FTS får et indeks ved opstart, og `ftsQuery`. Plus en benchmark.
+
+**Hvorfor**
+- Opgaven *SQLite FTS5* (uge 8): hurtigere søgning med FTS5, triggers så de to tabeller er konsistente, og sortering efter relevans.
+- **Måling** (`go test -bench Search -run '^$'`, 5.000 sider): `LIKE` 32,7 ms pr. søgning, FTS5 0,7 ms. Det er ca. 47 gange hurtigere.
+
+**LIKE og FTS5**
+- `LIKE '%ord%'` er simpel og finder også dele af ord, men den skal læse hele teksten på hver side ved hver søgning (intet indeks kan bruges med `%` foran), og den kan ikke sortere efter relevans.
+- FTS5 slår op i et indeks over ordene, så den er meget hurtigere, og den kan sortere efter relevans og finde ordformer. Til gengæld fylder indekset ekstra, triggerne gør skrivning en smule langsommere, og den finder hele ord, ikke dele af ord ("prog" finder ikke "programming").
+
+**Begrænsninger ved SQLite**
+- Kun én kan skrive ad gangen (derfor `busy_timeout`, se PR #55).
+- Databasen er en fil på én server, så appen kan ikke skaleres til flere servere uden at skifte til fx PostgreSQL.
+- Ingen brugere og rettigheder i selve databasen.
+
+**Se at det virker**
+- Søg på https://whoknows-gruppe2.dk efter fx "programming languages": siden med det i titlen kommer først.
+- `cd backend && go test ./...` → `ok`
+
+---
+
 ## 2026-11-08 · Harden Yourself: Trivy, security headers og session-cookie (PR #57)
 
 **Hvad vi fandt (før)**
