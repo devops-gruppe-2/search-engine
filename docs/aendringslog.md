@@ -19,6 +19,7 @@ Hver ændring i koden laves på en branch og merges til `main` via en pull reque
 - Session-nøglen læses fra miljøvariablen `SESSION_KEY`. Uden den laver appen en tilfældig nøgle ved hver opstart (sikker, men brugerne logges ud ved genstart). På serveren kan den sættes i `/opt/whoknows/.env`, som `compose.prod.yml` læser.
 - Session-cookien er `Secure`, når brugeren er på https (Nginx sender `X-Forwarded-Proto`). Over http på IP-adressen (simulatoren) virker login stadig.
 - **CI:** nyt job `trivy`, der bygger begge images og scanner dem. Det fejler ved HIGH eller CRITICAL, som har en rettelse. Trivy køres fra sit Docker-image låst til et digest i stedet for `trivy-action`, fordi trivy-action og Trivy v0.69.4 blev kompromitteret i et supply chain-angreb i marts 2026. CI har nu også `permissions: contents: read`.
+- **Branch protection:** `trivy` er tilføjet til de krævede checks, så en PR med en kendt HIGH- eller CRITICAL-sårbarhed ikke kan merges.
 - **CD:** efter deploy scannes siden med Mozilla Observatory, og karakteren vises i jobbets summary. Under B giver en advarsel.
 - **Tests:** 4 nye Go-tests (`backend/security_test.go`): cookien er `Secure`, `HttpOnly` og `SameSite=Lax` over https, ikke `Secure` over http, og nøglen kommer fra `SESSION_KEY` eller er tilfældig.
 
