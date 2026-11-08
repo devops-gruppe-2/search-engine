@@ -1,0 +1,51 @@
+# Dependabot laver pull requests, når vores afhængigheder har nye versioner.
+# Hver PR kører gennem CI (lint, test, e2e, build og trivy) som alle andre PR'er.
+# Små opdateringer (minor og patch) samles i én PR pr. økosystem, så vi ikke får for mange.
+version: 2
+
+updates:
+  # Go-pakker i backend/go.mod
+  - package-ecosystem: gomod
+    directory: /backend
+    schedule:
+      interval: weekly
+    groups:
+      go-minor-and-patch:
+        update-types: [minor, patch]
+    commit-message:
+      prefix: "deps(go)"
+
+  # Base-images i backend/Dockerfile (golang og debian)
+  - package-ecosystem: docker
+    directory: /backend
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: "deps(docker)"
+
+  # Base-image i nginx/Dockerfile
+  - package-ecosystem: docker
+    directory: /nginx
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: "deps(docker)"
+
+  # Actions i .github/workflows. Dependabot opdaterer også de låste commit-hashes.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns: ["*"]
+    commit-message:
+      prefix: "deps(actions)"
+
+  # Playwright i e2e/package.json
+  - package-ecosystem: npm
+    directory: /e2e
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: "deps(e2e)"
