@@ -7,13 +7,16 @@ RUN go mod download
 
 COPY . .
 
-RUN go build -o backend main.go
+# Byg hele pakken (main.go, weather.go osv.), ikke kun main.go
+RUN go build -o backend .
 
 FROM debian:bookworm-slim
 
 WORKDIR /app
 
 COPY --from=builder /app/backend .
+# Rodcertifikater, så backenden kan kalde Open-Meteo over HTTPS
+COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
 COPY --from=builder /app/static ./static
 COPY --from=builder /app/templates ./templates
 COPY --from=builder /app/schema.sqlite .

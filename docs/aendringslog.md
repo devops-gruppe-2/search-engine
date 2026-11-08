@@ -6,6 +6,31 @@ Hver ændring i koden laves på en branch og merges til `main` via en pull reque
 
 ---
 
+## 2026-11-08 · Weather med Open-Meteo og cache (PR #55)
+
+**Hvad**
+- Ny side `GET /weather` og nyt endpoint `GET /api/weather` med vejrudsigten for København de næste 7 dage (vejr, max/min-temperatur og nedbør). `/api/weather` svarer med `{"data": {...}}`, som `StandardResponse` i OpenAPI-spec'en.
+- Koden ligger i `backend/weather.go`. Backenden henter udsigten fra **Open-Meteo** og gemmer den i en **cache i 30 minutter**. En `sync.Mutex` sørger for, at kun én request ad gangen henter, så mange brugere på én gang ikke giver mange kald.
+- Er Open-Meteo nede, vises den sidst gemte udsigt. Findes der ingen, viser siden en besked, og API'et svarer `503`.
+- Link **Weather** (`#nav-weather`) i navigationen.
+- **Tests:** 6 nye Go-tests (`backend/weather_test.go`) mod en **falsk Open-Meteo** i en `httptest`-server: udsigten vises rigtigt, cachen gør at Open-Meteo kun kaldes én gang, den gamle udsigt bruges når Open-Meteo fejler, fejlbesked uden udsigt, og oversættelsen af vejrkoder. 1 ny Playwright-test (`e2e/tests/weather.spec.js`) klikker på Weather-linket mod den rigtige Open-Meteo.
+- **Dockerfile:** bygger nu hele pakken (`go build .`) i stedet for kun `main.go`, ellers kom `weather.go` ikke med. Rodcertifikaterne kopieres fra Go-imaget, fordi `debian:bookworm-slim` ikke har dem, og uden dem kan backenden ikke kalde Open-Meteo over HTTPS. CI's `build`-job bygger også hele pakken.
+- **Fejl fundet af E2E-testene og rettet:** når to brugere registrerede sig samtidig, fik den ene `500`, fordi SQLite var låst af den anden ("database is locked"). Med 20 samtidige registreringer fejlede 9. Databasen åbnes nu med `busy_timeout(5000)`, så en request venter op til 5 sekunder på låsen i stedet for at fejle. Ny integrationstest `TestManyUsersCanRegisterAtTheSameTime` fejler uden rettelsen og består med den.
+
+**Hvorfor**
+- Opgaven *Consumer report* (uge 4): en weather-side med udsigten, integration med en 3. parts-tjeneste, og at integrationen testes i pipelinen. Simulatoren besøger også `/weather` og `/api/weather`.
+- **Open-Meteo:** gratis til ikke-kommerciel brug, ingen API-nøgle (så ingen hemmelighed at gemme) og op til 10.000 kald om dagen.
+- **Backend i stedet for frontend:** så virker cachen for alle brugere, og vi undgår browserens placering (geolocation), som kræver HTTPS og brugerens tilladelse.
+- **Cache (skalering):** med 30 minutter kalder vi Open-Meteo højst ca. 48 gange i døgnet, uanset hvor mange brugere der er. Skal det skaleres til flere servere, kan cachen flyttes til en fælles cache som Redis.
+- **Fast by:** søgemaskinen har ingen placering for brugeren, så vi viser København.
+
+**Se at det virker**
+- `cd backend && go test ./...` → `ok`
+- https://whoknows-gruppe2.dk/weather viser en tabel med 7 dage, og https://whoknows-gruppe2.dk/api/weather giver JSON.
+- GitHub → Actions → CI: `test` og `e2e` er grønne.
+
+---
+
 ## 2026-11-07 · Integrationstests, unit tests og E2E-tests (PR #54)
 
 **Hvad**
