@@ -6,6 +6,23 @@ Hver ændring i koden laves på en branch og merges til `main` via en pull reque
 
 ---
 
+## 2026-11-08 · Logget ind direkte efter registrering (PR #56)
+
+**Hvad**
+- `registerUser` gemmer nu brugernavnet i sessionen, når brugeren er oprettet, så brugeren er logget ind med det samme.
+- I browseren sendes brugeren til forsiden (`/`) i stedet for login-siden, og log ud-linket med brugernavnet vises. API-kald får stadig `201` og nu også session-cookien.
+- Kan sessionen ikke gemmes, er brugeren stadig oprettet og sendes til login-siden som før.
+- **Tests:** 2 nye integrationstests (`TestRegisterLogsTheUserIn` og `TestRegisterThroughTheAPIAlsoLogsTheUserIn`). Playwright-testene i `e2e/tests/auth.spec.js` er opdateret: en ny bruger er logget ind efter registrering, kan logge ud og ind igen, og et forkert password giver en fejl.
+
+**Hvorfor**
+- Opgaven *User feedback survey* (uge 8): brugerne vil være logget ind efter registrering i stedet for at skulle logge ind igen.
+
+**Se at det virker**
+- Registrér en ny bruger på https://whoknows-gruppe2.dk/register: du lander på forsiden med "Log out [brugernavn]".
+- `cd backend && go test ./...` → `ok`
+
+---
+
 ## 2026-11-08 · Weather med Open-Meteo og cache (PR #55)
 
 **Hvad**
