@@ -103,6 +103,7 @@ The tests in `backend/weather_test.go` use a fake Open-Meteo server, so they don
 
 - **Trivy** scans the backend and Nginx images in CI (`trivy` job) and fails on HIGH or CRITICAL vulnerabilities that have a fix.
 - **Mozilla Observatory** checks the deployed site after every deploy (CD job summary).
+- **Dependabot** opens a pull request every week when Go packages, Docker base images, GitHub Actions or Playwright have new versions (`.github/dependabot.yml`).
 - **Security headers** are set by Nginx in `nginx/security-headers.conf` (CSP, X-Frame-Options, X-Content-Type-Options, Referrer-Policy) plus HSTS on https.
 - **Session cookie** is signed with `SESSION_KEY` and is `Secure` and `HttpOnly` on https. Without `SESSION_KEY` the app creates a random key at startup, which logs users out on every restart.
 

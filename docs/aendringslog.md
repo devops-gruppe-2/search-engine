@@ -6,6 +6,28 @@ Hver ændring i koden laves på en branch og merges til `main` via en pull reque
 
 ---
 
+## 2026-11-08 · Dependabot version updates (PR #60)
+
+**Hvad**
+- Ny fil `.github/dependabot.yml`. Dependabot tjekker hver uge, om der er nye versioner, og laver en pull request for:
+  - Go-pakker (`backend/go.mod`)
+  - Base-images i `backend/Dockerfile` og `nginx/Dockerfile`
+  - GitHub Actions i `.github/workflows`, også de låste commit-hashes
+  - Playwright (`e2e/package.json`)
+- Små opdateringer (minor og patch) af Go-pakker og alle Actions samles i én PR, så der ikke kommer for mange.
+- Hver Dependabot-PR kører gennem hele CI, også `trivy`, og skal være grøn, før den kan merges.
+
+**Hvorfor**
+- Dependabot **alerts** var allerede slået til, men de giver kun besked, når en sårbarhed er kendt. Med **version updates** holder vi os opdateret hele tiden, så sårbarheder bliver rettet, før vi selv skal finde dem.
+- Trivy fandt i PR #57 en gammel `golang.org/x/net` med en HIGH-sårbarhed. Den slags opdatering kommer nu automatisk som en PR.
+- Vi har låst Actions til commit-hashes (sikkerhed). Uden Dependabot ville de aldrig blive opdateret.
+
+**Se at det virker**
+- GitHub → Insights → Dependency graph → Dependabot: alle fem økosystemer står der med "Last checked".
+- Dependabot-PR'er dukker op under Pull requests med titler som `deps(go): …`.
+
+---
+
 ## 2026-11-08 · Firewall (ufw) og SESSION_KEY på serveren (ingen kodeændring)
 
 **Hvad**
