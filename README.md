@@ -239,6 +239,21 @@ Exit SQLite:
 
 ---
 
+## 🔎 Search (FTS5)
+
+Search uses SQLite **FTS5** (full text search) instead of `LIKE`. The virtual table `pages_fts` indexes `title` and `content` from `pages`, and triggers keep it up to date when pages are added, changed or deleted (also by the crawler). The index is created and rebuilt from `pages` when the app starts. The code is in `backend/search.go`.
+
+Results are ranked by relevance (`bm25`, a word in the title counts 10 times as much), and words like "languages" also find "language".
+
+Compare `LIKE` and FTS5 on 5,000 pages:
+
+```bash
+cd backend
+go test -bench Search -run '^$'
+```
+
+---
+
 ## 💾 Database Backup
 
 Automatic database backup is configured on the droplet.
