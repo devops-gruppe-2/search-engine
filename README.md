@@ -64,7 +64,7 @@ If everything is set up correctly, you will see a green **`golangci-lint...Passe
 | Type | Where | What it tests |
 |---|---|---|
 | Unit tests | `backend/password_test.go` | Password hashing on its own (bcrypt, salt, passwords over 72 bytes) |
-| Integration tests | `backend/integration_test.go`, `backend/weather_test.go` | The whole app (routes, middleware, sessions and a real SQLite database) through HTTP requests: register (also many users at once), login, logout, search, the forced password change, the selectors the simulator uses, and the weather page against a fake Open-Meteo |
+| Integration tests | `backend/integration_test.go`, `backend/weather_test.go` | The whole app (routes, middleware, sessions and a real SQLite database) through HTTP requests: register (also many users at once, and logged in right after), login, logout, search, the forced password change, the selectors the simulator uses, and the weather page against a fake Open-Meteo |
 | End-to-end tests | `e2e/tests/` | A real browser (Playwright) using the site like a user: search, register, log in, log out, wrong password, weather page |
 | Smoke test | `scripts/smoke-test.sh` | The app starts in Docker and the front page answers |
 

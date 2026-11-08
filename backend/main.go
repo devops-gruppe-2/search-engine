@@ -384,11 +384,24 @@ func registerUser(c *gin.Context) {
 		return
 	}
 
-	// En bruger i browseren sendes videre til login-siden
-	if wantsHTML(c) {
-		c.Redirect(http.StatusSeeOther, "/login")
+	// Brugeren logges ind med det samme, så de ikke skal skrive det hele igen på login-siden
+	// (User feedback survey). Nye brugere har et bcrypt-hash og skal ikke skifte password.
+	session := sessions.Default(c)
+	session.Set("username", username)
+	session.Set("must_change_password", false)
+	if err := session.Save(); err != nil {
+		// Brugeren er oprettet, så de kan stadig logge ind selv
+		log.Printf("Failed to log in new user %s: %v", username, err)
+		if wantsHTML(c) {
+			c.Redirect(http.StatusSeeOther, "/login")
+			return
+		}
+	} else if wantsHTML(c) {
+		// En bruger i browseren sendes til forsiden, hvor log ud-linket nu vises
+		c.Redirect(http.StatusSeeOther, "/")
 		return
 	}
+
 	c.JSON(http.StatusCreated, APIUserCreatedResponse{
 		Status:  "success",
 		Message: "User registered successfully",
