@@ -137,6 +137,12 @@ ssh deploy@157.245.66.153
 
 An authorized SSH key is required.
 
+The firewall (`ufw`) only allows incoming traffic on ports 22 (SSH), 80 (HTTP) and 443 (HTTPS):
+
+```bash
+sudo ufw status verbose
+```
+
 ---
 
 ## 🐳 Docker on the server
