@@ -4,6 +4,10 @@ services:
   backend:
     image: ghcr.io/devops-gruppe-2/search-engine:sha-${IMAGE_SHA:?IMAGE_SHA skal være sat}
     container_name: whoknows-backend
+    # Nøglen til session-cookien. Den står i /opt/whoknows/.env på serveren og ikke i Git.
+    # Mangler den, laver appen en tilfældig nøgle ved hver opstart.
+    environment:
+      SESSION_KEY: ${SESSION_KEY:-}
     volumes:
       - /opt/whoknows/app.db:/app/app.db
     # Kun Nginx kan nå appen. Den er ikke åben direkte mod internettet.
