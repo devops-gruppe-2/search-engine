@@ -6,6 +6,27 @@ Hver ændring i koden laves på en branch og merges til `main` via en pull reque
 
 ---
 
+## 2026-11-08 · Firewall (ufw) og SESSION_KEY på serveren (ingen kodeændring)
+
+**Hvad**
+- **ufw** er slået til på dropletten:
+  - Standard: al indgående trafik afvises, udgående er tilladt.
+  - Kun **22/tcp** (SSH), **80/tcp** (HTTP) og **443/tcp** (HTTPS) er åbne, både for IPv4 og IPv6.
+  - Logging er slået til (low).
+- **`SESSION_KEY`** er sat i `/opt/whoknows/.env` med en tilfældig nøgle (`openssl rand -hex 32`). Filen har `chmod 600` og ejes af `deploy`, så kun den bruger, CD deployer som, kan læse den. Den er ikke i Git.
+
+**Hvorfor**
+- **Firewall:** kun de porte, vi bruger, skal kunne nås udefra. Alt andet, fx en database eller appen på 8080, er lukket, selv hvis noget ved en fejl kommer til at lytte på en port.
+- Docker åbner selv porte, der står under `ports:` i compose, uden om ufw. Derfor bruger backenden kun `expose: 8080`, så den kun kan nås gennem Nginx.
+- **SESSION_KEY:** session-cookien signeres med den nøgle (se PR #57). Når den ligger fast på serveren, bliver brugerne ikke logget ud ved hvert deploy, og den kendes ikke af andre.
+
+**Se at det virker**
+- På serveren: `sudo ufw status verbose`
+- Udefra er 22, 80 og 443 åbne, mens 8080, 3000 og 5432 er lukkede.
+- `ls -l /opt/whoknows/.env` viser `-rw------- deploy deploy`.
+
+---
+
 ## 2026-11-08 · Søgning med SQLite FTS5 (PR #58)
 
 **Hvad**
