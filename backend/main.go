@@ -26,10 +26,6 @@ import (
 var schemaSQL string
 var db *sql.DB
 
-// Søgning i pages. Kolonnerne nævnes i samme rækkefølge som felterne i SearchResult,
-// og en side uden dato giver en tom tekst i stedet for at få Scan til at fejle.
-const searchQuery = "SELECT title, url, language, COALESCE(last_updated, ''), content FROM pages WHERE language = ? AND content LIKE ?"
-
 // Krav til nye passwords
 const minPasswordLength = 8
 
@@ -194,6 +190,10 @@ func initDB(dbPath string) (*sql.DB, error) {
 
 	if err := migrateUsers(ctx, db); err != nil {
 		return nil, fmt.Errorf("failed to migrate users: %w", err)
+	}
+
+	if err := migrateSearchIndex(ctx, db); err != nil {
+		return nil, fmt.Errorf("failed to create search index: %w", err)
 	}
 
 	return db, nil
@@ -623,31 +623,15 @@ func SearchAPI(c *gin.Context) {
 		return
 	}
 	language := c.DefaultQuery("language", "en")
-	query := searchQuery
 
-	rows, err := db.QueryContext(c.Request.Context(), query, language, "%"+SearchParameter+"%")
+	results, err := searchPages(c.Request.Context(), SearchParameter, language)
 	if err != nil {
+		log.Printf("Search failed: %v", err)
 		c.JSON(http.StatusInternalServerError, APIUserSearchResponse{
 			StatusCode: 422,
 			Message:    "Failed to search in database",
 		})
 		return
-	}
-	defer func() { _ = rows.Close() }()
-
-	var results []SearchResult
-
-	for rows.Next() {
-		var result SearchResult
-		err := rows.Scan(&result.Title, &result.URL, &result.Language, &result.LastUpdated, &result.Content)
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, APIUserSearchResponse{
-				StatusCode: 422,
-				Message:    "Failed to scan search results",
-			})
-			return
-		}
-		results = append(results, result)
 	}
 
 	c.JSON(http.StatusOK, APIUserSearchResponse{
@@ -670,32 +654,15 @@ func HTMLSearchFunctionData(c *gin.Context) {
 		return
 	}
 
-	query := searchQuery
-	rows, err := db.QueryContext(c.Request.Context(), query, language, "%"+searchParameter+"%")
+	results, err := searchPages(c.Request.Context(), searchParameter, language)
 	if err != nil {
+		log.Printf("Search failed: %v", err)
 		c.HTML(http.StatusInternalServerError, "search.html", pageData(c, gin.H{
 			"Query":         searchParameter,
 			"SearchResults": []SearchResult{},
 			"Error":         "Failed to search in database",
 		}))
 		return
-	}
-	defer func() { _ = rows.Close() }()
-
-	var results []SearchResult
-
-	for rows.Next() {
-		var result SearchResult
-		err := rows.Scan(&result.Title, &result.URL, &result.Language, &result.LastUpdated, &result.Content)
-		if err != nil {
-			c.HTML(http.StatusInternalServerError, "search.html", pageData(c, gin.H{
-				"Query":         searchParameter,
-				"SearchResults": []SearchResult{},
-				"Error":         "Failed to scan search results",
-			}))
-			return
-		}
-		results = append(results, result)
 	}
 
 	var errorMessage string
