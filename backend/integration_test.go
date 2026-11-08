@@ -133,6 +133,33 @@ func TestRegisterThenLogin(t *testing.T) {
 	expectStatus(t, res, http.StatusOK)
 }
 
+// User feedback survey: brugeren skal være logget ind direkte efter registrering
+func TestRegisterLogsTheUserIn(t *testing.T) {
+	app := newTestApp(t)
+
+	form := url.Values{"username": {"alice"}, "email": {"alice@example.com"}, "password": {"correct-horse"}}
+	res := app.do(http.MethodPost, "/api/register", form, true)
+	expectStatus(t, res, http.StatusSeeOther)
+	if res.location != "/" {
+		t.Fatalf("register redirected to %q, want /", res.location)
+	}
+
+	page := app.do(http.MethodGet, "/", nil, true)
+	if !strings.Contains(page.body, `id="nav-logout"`) || !strings.Contains(page.body, "alice") {
+		t.Fatal("front page should show the logout link with the username right after register")
+	}
+
+	// Sessionen er rigtig: logout virker uden at logge ind først
+	expectStatus(t, app.get("/api/logout"), http.StatusOK)
+}
+
+func TestRegisterThroughTheAPIAlsoLogsTheUserIn(t *testing.T) {
+	app := newTestApp(t)
+	app.register("alice", "correct-horse")
+
+	expectStatus(t, app.get("/api/logout"), http.StatusOK)
+}
+
 func TestPasswordsAreStoredAsBcryptHashes(t *testing.T) {
 	app := newTestApp(t)
 	app.register("alice", "correct-horse")
