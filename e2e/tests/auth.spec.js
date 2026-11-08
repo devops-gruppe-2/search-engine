@@ -13,10 +13,10 @@ async function registerViaForm(page, user) {
   await page.locator('input[name="email"]').fill(user.email);
   await page.locator('input[name="password"]').fill(user.password);
   await page.locator('#register-button').click();
-  await expect(page).toHaveURL(/\/login$/);
 }
 
 async function loginViaForm(page, username, password) {
+  await page.goto('/login');
   await page.locator('input[name="username"]').fill(username);
   await page.locator('input[name="password"]').fill(password);
   await page.locator('#login-button').click();
@@ -29,24 +29,34 @@ test('log in link on the front page opens the login page', async ({ page }) => {
   await expect(page.locator('#login-button')).toBeVisible();
 });
 
-test('a new user can register, log in and log out', async ({ page }) => {
+// User feedback survey: man er logget ind direkte efter registrering
+test('a new user is logged in right after registering', async ({ page }) => {
   const user = newUser();
   await registerViaForm(page, user);
 
-  await loginViaForm(page, user.username, user.password);
+  await expect(page).toHaveURL(/\/$/);
   const logout = page.locator('#nav-logout');
   await expect(logout).toBeVisible();
   await expect(logout).toContainText(user.username);
   await expect(page.locator('#nav-login')).toHaveCount(0);
+});
 
-  await logout.click();
+test('a user can log out and log in again', async ({ page }) => {
+  const user = newUser();
+  await registerViaForm(page, user);
+
+  await page.locator('#nav-logout').click();
   await expect(page.locator('#nav-login')).toBeVisible();
   await expect(page.locator('#nav-logout')).toHaveCount(0);
+
+  await loginViaForm(page, user.username, user.password);
+  await expect(page.locator('#nav-logout')).toContainText(user.username);
 });
 
 test('logging in with a wrong password shows an error', async ({ page }) => {
   const user = newUser();
   await registerViaForm(page, user);
+  await page.locator('#nav-logout').click();
 
   await loginViaForm(page, user.username, 'wrong-password');
   await expect(page.getByText('Invalid username or password')).toBeVisible();
