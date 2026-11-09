@@ -6,7 +6,7 @@ Hver ændring i koden laves på en branch og merges til `main` via en pull reque
 
 ---
 
-## 2026-11-09 · Register-endpoint efter OpenAPI-spec'en (PR #61, issue #17)
+## 2026-11-09 · Register-endpoint efter OpenAPI-spec'en (PR #65, issue #17)
 
 **Hvad var galt**
 - `POST /api/register` svarede `201` med `{"status", "message", "user"}` ved succes og `400` ved manglende felter. Spec'en siger `200` med `AuthResponse` og `422` med `HTTPValidationError`.
