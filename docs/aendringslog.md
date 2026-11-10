@@ -6,6 +6,57 @@ Hver ændring i koden laves på en branch og merges til `main` via en pull reque
 
 ---
 
+## 2026-11-10 · Nginx bliver på stable-sporet og henter Alpine-rettelser (PR #66)
+
+**Hvad var galt**
+- Dependabot foreslog i PR #61 at opdatere `nginx:1.30.6-alpine` til `nginx:1.31.7-alpine`. Trivy-jobbet fejlede: det nye image havde **12 kendte sårbarheder** (1 CRITICAL i brotli, 11 HIGH i curl, expat og libx11).
+- Vores nuværende image har **0**. Det "nye" image var bygget på Alpine 3.24.2, mens vores er på 3.24.4 med sikkerhedsrettelserne.
+- Nginx har to spor: **stable** (lige minor-version, fx 1.30) og **mainline** (ulige, fx 1.31). Mainline-imaget var ikke genopbygget med de nyeste rettelser.
+
+**Hvad er ændret**
+- `.github/dependabot.yml`: for `nginx` ignoreres minor- og major-opdateringer, så Dependabot kun foreslår patch-opdateringer på stable-sporet (1.30.x).
+- PR #61 lukkes uden merge.
+- `nginx/Dockerfile`: `RUN apk upgrade --no-cache`. Samme dag kom der 2 nye HIGH-sårbarheder i `libxslt` (CVE-2026-87636 og CVE-2026-9947) i vores eget 1.30.6-image. Alpine havde allerede rettelsen (1.1.43-r4), men nginx-imaget var ikke genopbygget endnu, så Trivy stoppede alle PR'er. Nu henter vi Alpines rettelser selv, når imaget bygges.
+
+**Hvorfor**
+- En nyere version er ikke altid mere sikker. Trivy i CI og branch protection gjorde, at en opdatering med en CRITICAL-sårbarhed ikke kunne komme i produktion, selv om den kom automatisk fra Dependabot.
+- `apk upgrade` gør, at vi ikke skal vente på, at nginx-holdet genopbygger deres image, før en rettelse fra Alpine kommer med.
+- Når næste stable-version (1.32) kommer, opdaterer vi manuelt, og Trivy tjekker den på samme måde.
+
+**Se at det virker**
+- PR #61 → Checks → `trivy` viser de 12 fund.
+- `docker run --rm -v /var/run/docker.sock:/var/run/docker.sock aquasec/trivy:0.69.3 image --severity HIGH,CRITICAL --ignore-unfixed nginx:1.30.6-alpine` → 0.
+
+---
+
+## 2026-11-09 · Register-endpoint efter OpenAPI-spec'en (PR #65, issue #17)
+
+**Hvad var galt**
+- `POST /api/register` svarede `201` med `{"status", "message", "user"}` ved succes og `400` ved manglende felter. Spec'en siger `200` med `AuthResponse` og `422` med `HTTPValidationError`.
+- E-mailen blev ikke tjekket, og en bruger med et navn eller en e-mail, der allerede fandtes, gav `500`.
+- Feltet `password2` fra spec'en blev ignoreret.
+
+**Hvad er ændret**
+- Succes: `200` med `{"statusCode": 200, "message": "User registered successfully"}`.
+- Ugyldigt input: `422` med en fejl pr. felt, fx `{"detail": [{"loc": ["body", "email"], "msg": "You have to enter a valid email address", "type": "value_error"}]}`.
+- Tjek i `validateRegistration`:
+  - username, email og password skal være udfyldt (`missing`)
+  - e-mailen skal være gyldig (`net/mail`)
+  - `password2` skal passe, hvis den er sendt med. Den er valgfri i spec'en
+  - brugernavnet og e-mailen må ikke være i brug i forvejen
+- I browseren vises den første fejl på register-siden (`422`), og det brugeren har skrevet, bliver stående.
+- `APIUserCreatedResponse` er fjernet. Register bruger `AuthResponse` ligesom login.
+- **Tests:** 6 integrationstests: svarformatet, manglende felter, ugyldig e-mail, `password2`, dublet-brugernavn og dublet-e-mail, og fejlbeskeden i browseren.
+
+**Hvorfor**
+- *Commence the rewrite*: "You must adhere to the provided OpenAPI specification exactly." Klienter som simulatoren forventer de statuskoder og felter, der står i spec'en.
+
+**Se at det virker**
+- `curl -X POST -d "username=x&email=bad&password=y" https://whoknows-gruppe2.dk/api/register` → `422` med `detail`.
+- `cd backend && go test ./...` → `ok`
+
+---
+
 ## 2026-11-08 · Dependabot version updates (PR #60)
 
 **Hvad**

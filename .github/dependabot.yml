@@ -23,11 +23,16 @@ updates:
     commit-message:
       prefix: "deps(docker)"
 
-  # Base-image i nginx/Dockerfile
+  # Base-image i nginx/Dockerfile. Vi bliver på Nginx' stable-spor (lige minor, fx 1.30.x),
+  # så kun patch-opdateringer foreslås. Mainline (ulige minor, fx 1.31) var bygget på en
+  # ældre Alpine med 12 kendte sårbarheder, som Trivy stoppede i PR #61.
   - package-ecosystem: docker
     directory: /nginx
     schedule:
       interval: weekly
+    ignore:
+      - dependency-name: nginx
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
     commit-message:
       prefix: "deps(docker)"
 
