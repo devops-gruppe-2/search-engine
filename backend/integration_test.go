@@ -109,7 +109,7 @@ func (a *testApp) register(username, password string) {
 		"email":    {username + "@example.com"},
 		"password": {password},
 	})
-	if res.status != http.StatusCreated {
+	if res.status != http.StatusOK {
 		a.t.Fatalf("register %s: status %d, body %s", username, res.status, res.body)
 	}
 }
@@ -199,23 +199,89 @@ func TestLoginRequiresUsernameAndPassword(t *testing.T) {
 	}
 }
 
-func TestRegisterRequiresAllFields(t *testing.T) {
-	app := newTestApp(t)
-	res := app.post("/api/register", url.Values{"username": {"alice"}, "password": {"x"}})
-	expectStatus(t, res, http.StatusBadRequest)
+// registerProblems sender en registrering og giver de felter, API'et siger er ugyldige (loc og type)
+func registerProblems(t *testing.T, app *testApp, form url.Values) []string {
+	t.Helper()
+	res := app.post("/api/register", form)
+	expectStatus(t, res, http.StatusUnprocessableEntity)
+
+	var body HTTPValidationError
+	if err := json.Unmarshal([]byte(res.body), &body); err != nil {
+		t.Fatalf("422 body is not HTTPValidationError: %v (%s)", err, res.body)
+	}
+	var problems []string
+	for _, d := range body.Detail {
+		if len(d.Loc) != 2 || d.Loc[0] != "body" || d.Msg == "" {
+			t.Fatalf("invalid validation error: %+v", d)
+		}
+		problems = append(problems, d.Loc[1]+":"+d.Type)
+	}
+	return problems
 }
 
-func TestRegisterRejectsDuplicateUsername(t *testing.T) {
+func expectProblems(t *testing.T, got []string, want ...string) {
+	t.Helper()
+	if strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Fatalf("problems = %v, want %v", got, want)
+	}
+}
+
+// OpenAPI: 200 med AuthResponse {"statusCode", "message"}
+func TestRegisterRespondsLikeTheSpec(t *testing.T) {
+	app := newTestApp(t)
+	res := app.post("/api/register", url.Values{"username": {"alice"}, "email": {"alice@example.com"}, "password": {"correct-horse"}})
+	expectStatus(t, res, http.StatusOK)
+
+	var body map[string]any
+	if err := json.Unmarshal([]byte(res.body), &body); err != nil {
+		t.Fatal(err)
+	}
+	if body["statusCode"] != float64(200) || body["message"] != "User registered successfully" || len(body) != 2 {
+		t.Fatalf("body = %v, want AuthResponse with statusCode 200", body)
+	}
+}
+
+func TestRegisterRequiresAllFields(t *testing.T) {
+	app := newTestApp(t)
+	expectProblems(t, registerProblems(t, app, url.Values{}), "username:missing", "email:missing", "password:missing")
+	expectProblems(t, registerProblems(t, app, url.Values{"username": {"alice"}, "password": {"x"}}), "email:missing")
+}
+
+func TestRegisterRejectsInvalidEmail(t *testing.T) {
+	app := newTestApp(t)
+	form := url.Values{"username": {"alice"}, "email": {"not-an-email"}, "password": {"correct-horse"}}
+	expectProblems(t, registerProblems(t, app, form), "email:value_error")
+}
+
+func TestRegisterChecksPassword2WhenItIsSent(t *testing.T) {
+	app := newTestApp(t)
+	form := url.Values{"username": {"alice"}, "email": {"alice@example.com"}, "password": {"correct-horse"}, "password2": {"other"}}
+	expectProblems(t, registerProblems(t, app, form), "password2:value_error")
+
+	form.Set("password2", "correct-horse")
+	expectStatus(t, app.post("/api/register", form), http.StatusOK)
+}
+
+func TestRegisterRejectsDuplicateUsernameAndEmail(t *testing.T) {
 	app := newTestApp(t)
 	app.register("alice", "correct-horse")
 
-	res := app.post("/api/register", url.Values{
-		"username": {"alice"},
-		"email":    {"other@example.com"},
-		"password": {"correct-horse"},
-	})
-	if res.status == http.StatusCreated {
-		t.Fatal("registering the same username twice should fail")
+	sameName := url.Values{"username": {"alice"}, "email": {"other@example.com"}, "password": {"correct-horse"}}
+	expectProblems(t, registerProblems(t, app, sameName), "username:value_error")
+
+	sameEmail := url.Values{"username": {"bob"}, "email": {"alice@example.com"}, "password": {"correct-horse"}}
+	expectProblems(t, registerProblems(t, app, sameEmail), "email:value_error")
+}
+
+func TestRegisterFormShowsTheError(t *testing.T) {
+	app := newTestApp(t)
+	app.register("alice", "correct-horse")
+
+	form := url.Values{"username": {"alice"}, "email": {"other@example.com"}, "password": {"correct-horse"}}
+	page := app.do(http.MethodPost, "/api/register", form, true)
+	expectStatus(t, page, http.StatusUnprocessableEntity)
+	if !strings.Contains(page.body, "The username is already taken") || !strings.Contains(page.body, `value="alice"`) {
+		t.Fatal("register page should show the error and keep what the user typed")
 	}
 }
 
@@ -254,8 +320,8 @@ func TestManyUsersCanRegisterAtTheSameTime(t *testing.T) {
 	close(statuses)
 
 	for status := range statuses {
-		if status != http.StatusCreated {
-			t.Fatalf("a registration got status %d, want %d", status, http.StatusCreated)
+		if status != http.StatusOK {
+			t.Fatalf("a registration got status %d, want %d", status, http.StatusOK)
 		}
 	}
 }

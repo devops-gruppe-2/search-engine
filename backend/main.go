@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"net/mail"
 	"os"
 	"strings"
 
@@ -35,10 +36,15 @@ const maxPasswordBytes = 72
 // Så længe er man logget ind (sekunder)
 const sessionMaxAge = 86400
 
-type APIUserCreatedResponse struct {
-	Status  string `json:"status"`
-	Message string `json:"message"`
-	User    string `json:"user,omitempty"`
+// ValidationError og HTTPValidationError er fejlformatet for 422 i OpenAPI-spec'en
+type ValidationError struct {
+	Loc  []string `json:"loc"`
+	Msg  string   `json:"msg"`
+	Type string   `json:"type"`
+}
+
+type HTTPValidationError struct {
+	Detail []ValidationError `json:"detail"`
 }
 
 type SearchResult struct {
@@ -372,53 +378,53 @@ func pageData(c *gin.Context, data gin.H) gin.H {
 // CREATE ENDPOIINTS
 //==============================================================================================================================================================================
 
+// registerUser opretter en bruger. Svarene følger OpenAPI-spec'en: 200 med AuthResponse,
+// og 422 med HTTPValidationError når input ikke er gyldigt.
 func registerUser(c *gin.Context) {
 
-	username := c.PostForm("username")
+	username := strings.TrimSpace(c.PostForm("username"))
+	email := strings.TrimSpace(c.PostForm("email"))
 	password := c.PostForm("password")
-	email := c.PostForm("email")
+	password2 := c.PostForm("password2")
 
 	// Bruges når formularen skal vises igen med en fejl
 	formData := gin.H{"FormUsername": username, "FormEmail": email}
 
-	if username == "" || password == "" || email == "" {
+	registerFailed := func(status int, message string) {
 		if wantsHTML(c) {
-			formData["Error"] = "Username, email, and password are required"
-			c.HTML(http.StatusBadRequest, "register.html", pageData(c, formData))
+			formData["Error"] = message
+			c.HTML(status, "register.html", pageData(c, formData))
 			return
 		}
-		c.JSON(http.StatusBadRequest, APIUserCreatedResponse{
-			Status:  "error",
-			Message: "Username, email, and password are required",
-		})
+		c.JSON(status, AuthResponse{StatusCode: status, Message: message})
+	}
+
+	problems, err := validateRegistration(c.Request.Context(), username, email, password, password2)
+	if err != nil {
+		log.Printf("Register validation failed: %v", err)
+		registerFailed(http.StatusInternalServerError, "Failed to register user")
 		return
 	}
-	hash, err := hashPassword(password)
-	if err != nil {
+	if len(problems) > 0 {
 		if wantsHTML(c) {
-			formData["Error"] = "Failed to register user"
-			c.HTML(http.StatusInternalServerError, "register.html", pageData(c, formData))
+			formData["Error"] = problems[0].Msg
+			c.HTML(http.StatusUnprocessableEntity, "register.html", pageData(c, formData))
 			return
 		}
-		c.JSON(http.StatusInternalServerError, APIUserCreatedResponse{
-			Status:  "error",
-			Message: "Failed to register user",
-		})
+		c.JSON(http.StatusUnprocessableEntity, HTTPValidationError{Detail: problems})
+		return
+	}
+
+	hash, err := hashPassword(password)
+	if err != nil {
+		registerFailed(http.StatusInternalServerError, "Failed to register user")
 		return
 	}
 
 	query := "INSERT INTO users (username, email, password) VALUES (?, ?, ?)"
-	_, err = db.ExecContext(c.Request.Context(), query, username, email, hash)
-	if err != nil {
-		if wantsHTML(c) {
-			formData["Error"] = "Failed to register user"
-			c.HTML(http.StatusInternalServerError, "register.html", pageData(c, formData))
-			return
-		}
-		c.JSON(http.StatusInternalServerError, APIUserCreatedResponse{
-			Status:  "error",
-			Message: "Failed to register user",
-		})
+	if _, err := db.ExecContext(c.Request.Context(), query, username, email, hash); err != nil {
+		log.Printf("Register insert failed: %v", err)
+		registerFailed(http.StatusInternalServerError, "Failed to register user")
 		return
 	}
 
@@ -440,11 +446,64 @@ func registerUser(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusCreated, APIUserCreatedResponse{
-		Status:  "success",
-		Message: "User registered successfully",
-		User:    username,
+	c.JSON(http.StatusOK, AuthResponse{
+		StatusCode: http.StatusOK,
+		Message:    "User registered successfully",
 	})
+}
+
+// validateRegistration tjekker input til register og giver en fejl pr. felt, der ikke er gyldigt
+func validateRegistration(ctx context.Context, username, email, password, password2 string) ([]ValidationError, error) {
+	var problems []ValidationError
+	add := func(field, errorType, message string) {
+		problems = append(problems, ValidationError{Loc: []string{"body", field}, Msg: message, Type: errorType})
+	}
+
+	if username == "" {
+		add("username", "missing", "You have to enter a username")
+	}
+	if email == "" {
+		add("email", "missing", "You have to enter an email address")
+	} else if _, err := mail.ParseAddress(email); err != nil {
+		add("email", "value_error", "You have to enter a valid email address")
+	}
+	if password == "" {
+		add("password", "missing", "You have to enter a password")
+	}
+	// password2 er valgfri i spec'en, men skal passe hvis den er sendt med
+	if password2 != "" && password2 != password {
+		add("password2", "value_error", "The two passwords do not match")
+	}
+
+	if username != "" {
+		taken, err := exists(ctx, "SELECT COUNT(*) FROM users WHERE username = ?", username)
+		if err != nil {
+			return nil, err
+		}
+		if taken {
+			add("username", "value_error", "The username is already taken")
+		}
+	}
+	if email != "" {
+		taken, err := exists(ctx, "SELECT COUNT(*) FROM users WHERE email = ?", email)
+		if err != nil {
+			return nil, err
+		}
+		if taken {
+			add("email", "value_error", "The email address is already registered")
+		}
+	}
+
+	return problems, nil
+}
+
+// exists tjekker om en COUNT-query finder mindst én række
+func exists(ctx context.Context, query string, args ...any) (bool, error) {
+	var count int
+	if err := db.QueryRowContext(ctx, query, args...).Scan(&count); err != nil {
+		return false, err
+	}
+	return count > 0, nil
 }
 
 //==============================================================================================================================================================================
