@@ -6,6 +6,34 @@ Hver ændring i koden laves på en branch og merges til `main` via en pull reque
 
 ---
 
+## 2026-11-09 · Register-endpoint efter OpenAPI-spec'en (PR #65, issue #17)
+
+**Hvad var galt**
+- `POST /api/register` svarede `201` med `{"status", "message", "user"}` ved succes og `400` ved manglende felter. Spec'en siger `200` med `AuthResponse` og `422` med `HTTPValidationError`.
+- E-mailen blev ikke tjekket, og en bruger med et navn eller en e-mail, der allerede fandtes, gav `500`.
+- Feltet `password2` fra spec'en blev ignoreret.
+
+**Hvad er ændret**
+- Succes: `200` med `{"statusCode": 200, "message": "User registered successfully"}`.
+- Ugyldigt input: `422` med en fejl pr. felt, fx `{"detail": [{"loc": ["body", "email"], "msg": "You have to enter a valid email address", "type": "value_error"}]}`.
+- Tjek i `validateRegistration`:
+  - username, email og password skal være udfyldt (`missing`)
+  - e-mailen skal være gyldig (`net/mail`)
+  - `password2` skal passe, hvis den er sendt med. Den er valgfri i spec'en
+  - brugernavnet og e-mailen må ikke være i brug i forvejen
+- I browseren vises den første fejl på register-siden (`422`), og det brugeren har skrevet, bliver stående.
+- `APIUserCreatedResponse` er fjernet. Register bruger `AuthResponse` ligesom login.
+- **Tests:** 6 integrationstests: svarformatet, manglende felter, ugyldig e-mail, `password2`, dublet-brugernavn og dublet-e-mail, og fejlbeskeden i browseren.
+
+**Hvorfor**
+- *Commence the rewrite*: "You must adhere to the provided OpenAPI specification exactly." Klienter som simulatoren forventer de statuskoder og felter, der står i spec'en.
+
+**Se at det virker**
+- `curl -X POST -d "username=x&email=bad&password=y" https://whoknows-gruppe2.dk/api/register` → `422` med `detail`.
+- `cd backend && go test ./...` → `ok`
+
+---
+
 ## 2026-11-08 · Dependabot version updates (PR #60)
 
 **Hvad**
