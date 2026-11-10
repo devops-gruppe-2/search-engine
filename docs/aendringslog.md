@@ -6,6 +6,27 @@ Hver ændring i koden laves på en branch og merges til `main` via en pull reque
 
 ---
 
+## 2026-11-10 · Nginx bliver på stable-sporet (PR #66)
+
+**Hvad var galt**
+- Dependabot foreslog i PR #61 at opdatere `nginx:1.30.6-alpine` til `nginx:1.31.7-alpine`. Trivy-jobbet fejlede: det nye image havde **12 kendte sårbarheder** (1 CRITICAL i brotli, 11 HIGH i curl, expat og libx11).
+- Vores nuværende image har **0**. Det "nye" image var bygget på Alpine 3.24.2, mens vores er på 3.24.4 med sikkerhedsrettelserne.
+- Nginx har to spor: **stable** (lige minor-version, fx 1.30) og **mainline** (ulige, fx 1.31). Mainline-imaget var ikke genopbygget med de nyeste rettelser.
+
+**Hvad er ændret**
+- `.github/dependabot.yml`: for `nginx` ignoreres minor- og major-opdateringer, så Dependabot kun foreslår patch-opdateringer på stable-sporet (1.30.x).
+- PR #61 lukkes uden merge.
+
+**Hvorfor**
+- En nyere version er ikke altid mere sikker. Trivy i CI og branch protection gjorde, at en opdatering med en CRITICAL-sårbarhed ikke kunne komme i produktion, selv om den kom automatisk fra Dependabot.
+- Når næste stable-version (1.32) kommer, opdaterer vi manuelt, og Trivy tjekker den på samme måde.
+
+**Se at det virker**
+- PR #61 → Checks → `trivy` viser de 12 fund.
+- `docker run --rm -v /var/run/docker.sock:/var/run/docker.sock aquasec/trivy:0.69.3 image --severity HIGH,CRITICAL --ignore-unfixed nginx:1.30.6-alpine` → 0.
+
+---
+
 ## 2026-11-09 · Register-endpoint efter OpenAPI-spec'en (PR #65, issue #17)
 
 **Hvad var galt**
