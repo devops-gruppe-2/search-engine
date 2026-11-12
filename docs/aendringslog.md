@@ -6,6 +6,51 @@ Hver ændring i koden laves på en branch og merges til `main` via en pull reque
 
 ---
 
+## 2026-11-12 · requireLogin-middleware og HEAD-requests (PR #72, issue #31)
+
+**Hvad var galt**
+- Sider, der kræver login, tjekkede det selv inde i hver handler (`if !isLoggedIn(c) {...}`). Det samme tjek stod to steder, og en ny side kunne let glemme det.
+- Gin svarer `404` på HEAD-requests, fordi vi kun havde lavet GET-routes. Derfor gav `curl -I https://whoknows-gruppe2.dk/` `404`, selv om siden virker. HEAD bruges af overvågningsværktøjer og til at tjekke, om en side svarer.
+
+**Hvad er ændret**
+- `backend/main.go`: ny middleware `requireLogin`. Uden login sendes en browser til `/login` (303), og API-kald får `401` med `{"statusCode":401,"message":"You are not logged in"}`.
+- Routes, der kræver login, ligger nu i en route-gruppe: `loggedIn := router.Group("/", requireLogin)`. Det er `/change-password` og `/api/change-password`. Login-tjekket er fjernet fra selve handlerne.
+- Ny hjælpefunktion `getAndHead`, som laver både GET og HEAD for hver side. Serveren sender ingen body med på HEAD.
+- Logout og de offentlige sider (søgning, vejr, login og register) kræver stadig ikke login, ligesom i OpenAPI-spec'en.
+
+**Før**
+```go
+router.GET("/change-password", func(c *gin.Context) {
+	if !isLoggedIn(c) {
+		c.Redirect(http.StatusSeeOther, "/login")
+		return
+	}
+	...
+})
+```
+
+**Efter**
+```go
+loggedIn := router.Group("/", requireLogin)
+getAndHead(loggedIn, "/change-password", func(c *gin.Context) { ... })
+loggedIn.POST("/api/change-password", changePassword)
+```
+
+**Hvorfor**
+- Login-kravet står ét sted. En ny side, der kræver login, skal bare lægges i gruppen.
+- `curl -I` og overvågning giver nu det rigtige svar (`200`).
+
+**Tests**
+- `TestProtectedRoutesRequireLogin`: redirect til `/login`, `401` fra API'et, og adgang efter login.
+- `TestPublicRoutesDoNotRequireLogin`: søgning, login og register virker uden login.
+- `TestHeadRequestsWork`: HEAD giver `200` uden body på de offentlige sider og `303` på `/change-password` uden login.
+
+**Se at det virker**
+- `curl -I https://whoknows-gruppe2.dk/` giver `HTTP/1.1 200 OK`.
+- `curl -i -X POST https://whoknows-gruppe2.dk/api/change-password` giver `401`.
+
+---
+
 ## 2026-11-12 · README på dansk (PR #71)
 
 **Hvad var galt**

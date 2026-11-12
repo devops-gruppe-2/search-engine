@@ -457,6 +457,58 @@ func TestChangePasswordRequiresLogin(t *testing.T) {
 }
 
 //==============================================================================================================================================================================
+// REQUIRELOGIN OG HEAD
+//==============================================================================================================================================================================
+
+// requireLogin: uden login sendes browseren til login-siden, og API'et svarer 401
+func TestProtectedRoutesRequireLogin(t *testing.T) {
+	app := newTestApp(t)
+
+	page := app.do(http.MethodGet, "/change-password", nil, true)
+	expectStatus(t, page, http.StatusSeeOther)
+	if page.location != "/login" {
+		t.Fatalf("redirect to %q, want /login", page.location)
+	}
+
+	form := url.Values{"password": {"new-password-1"}, "password2": {"new-password-1"}}
+	api := app.post("/api/change-password", form)
+	expectStatus(t, api, http.StatusUnauthorized)
+	if !strings.Contains(api.body, "You are not logged in") {
+		t.Fatalf("body = %s, want the not logged in message", api.body)
+	}
+
+	// Når brugeren er logget ind, slipper requireLogin igennem
+	app.register("alice", "password-1")
+	expectStatus(t, app.do(http.MethodGet, "/change-password", nil, true), http.StatusOK)
+}
+
+// Offentlige sider kræver ikke login
+func TestPublicRoutesDoNotRequireLogin(t *testing.T) {
+	app := newTestApp(t)
+	for _, path := range []string{"/", "/search", "/login", "/register", "/api/search?q=go"} {
+		t.Run(path, func(t *testing.T) {
+			expectStatus(t, app.get(path), http.StatusOK)
+		})
+	}
+}
+
+// HEAD (fx "curl -I") skal give samme status som GET og ikke 404
+func TestHeadRequestsWork(t *testing.T) {
+	app := newTestApp(t)
+	for _, path := range []string{"/", "/search", "/login", "/register", "/api/search?q=go", "/static/style.css"} {
+		t.Run(path, func(t *testing.T) {
+			res := app.do(http.MethodHead, path, nil, false)
+			expectStatus(t, res, http.StatusOK)
+			if res.body != "" {
+				t.Fatalf("HEAD returned a body: %q", res.body)
+			}
+		})
+	}
+	res := app.do(http.MethodHead, "/change-password", nil, true)
+	expectStatus(t, res, http.StatusSeeOther)
+}
+
+//==============================================================================================================================================================================
 // FRONTEND-KONTRAKT MED SIMULATOREN
 //==============================================================================================================================================================================
 

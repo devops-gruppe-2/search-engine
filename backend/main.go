@@ -119,7 +119,7 @@ func setupRouter() *gin.Engine {
 	// CSS og andre statiske filer
 	router.Static("/static", "./static")
 
-	router.GET("/register", func(c *gin.Context) {
+	getAndHead(router, "/register", func(c *gin.Context) {
 		if isLoggedIn(c) {
 			c.Redirect(http.StatusSeeOther, "/")
 			return
@@ -127,7 +127,7 @@ func setupRouter() *gin.Engine {
 		c.HTML(http.StatusOK, "register.html", pageData(c, gin.H{}))
 	})
 
-	router.GET("/login", func(c *gin.Context) {
+	getAndHead(router, "/login", func(c *gin.Context) {
 		if isLoggedIn(c) {
 			c.Redirect(http.StatusSeeOther, "/")
 			return
@@ -135,30 +135,37 @@ func setupRouter() *gin.Engine {
 		c.HTML(http.StatusOK, "login.html", pageData(c, gin.H{}))
 	})
 
-	// Brugere ramt af sikkerhedsbruddet skal vælge et nyt password her
-	router.GET("/change-password", func(c *gin.Context) {
-		if !isLoggedIn(c) {
-			c.Redirect(http.StatusSeeOther, "/login")
-			return
-		}
-		c.HTML(http.StatusOK, "change_password.html", pageData(c, gin.H{"MustChange": mustChangePassword(c)}))
-	})
-
 	// Forsiden er søgesiden, ligesom i legacy
-	router.GET("/", HTMLSearchFunctionData)
+	getAndHead(router, "/", HTMLSearchFunctionData)
+	getAndHead(router, "/search", HTMLSearchFunctionData)
+	getAndHead(router, "/api/search", SearchAPI)
+	getAndHead(router, "/weather", WeatherPage)
+	getAndHead(router, "/api/weather", WeatherAPI)
 
 	router.POST("/api/register", registerUser)
-	router.GET("/api/search", SearchAPI)
 	router.POST("/api/login", loginUser)
-	router.POST("/api/change-password", changePassword)
-	router.GET("/search", HTMLSearchFunctionData)
-	router.GET("/weather", WeatherPage)
-	router.GET("/api/weather", WeatherAPI)
+
+	// Routes i denne gruppe kræver, at brugeren er logget ind (requireLogin)
+	loggedIn := router.Group("/", requireLogin)
+
+	// Brugere ramt af sikkerhedsbruddet skal vælge et nyt password her
+	getAndHead(loggedIn, "/change-password", func(c *gin.Context) {
+		c.HTML(http.StatusOK, "change_password.html", pageData(c, gin.H{"MustChange": mustChangePassword(c)}))
+	})
+	loggedIn.POST("/api/change-password", changePassword)
+
 	// OpenAPI-spec'en siger GET, POST beholdes så eksisterende klienter ikke går i stykker
 	router.GET("/api/logout", logoutUser)
 	router.POST("/api/logout", logoutUser)
 
 	return router
+}
+
+// getAndHead laver en GET-route og den samme route som HEAD. Gin svarer ellers 404 på HEAD,
+// som fx bruges af "curl -I" og overvågningsværktøjer. Serveren sender ikke body med på HEAD.
+func getAndHead(routes gin.IRoutes, path string, handlers ...gin.HandlerFunc) {
+	routes.GET(path, handlers...)
+	routes.HEAD(path, handlers...)
 }
 
 //==============================================================================================================================================================================
@@ -299,6 +306,25 @@ func isLoggedIn(c *gin.Context) bool {
 // mustChangePassword tjekker om den indloggede bruger skal vælge et nyt password
 func mustChangePassword(c *gin.Context) bool {
 	return sessions.Default(c).Get("must_change_password") == true
+}
+
+// requireLogin stopper requests fra brugere, der ikke er logget ind. En browser sendes til
+// login-siden, og API-kald får 401. Bruges på routes, der kræver login (se setupRouter).
+func requireLogin(c *gin.Context) {
+	if isLoggedIn(c) {
+		c.Next()
+		return
+	}
+
+	if wantsHTML(c) {
+		c.Redirect(http.StatusSeeOther, "/login")
+	} else {
+		c.JSON(http.StatusUnauthorized, AuthResponse{
+			StatusCode: http.StatusUnauthorized,
+			Message:    "You are not logged in",
+		})
+	}
+	c.Abort()
 }
 
 // requirePasswordChange sender brugere, der skal skifte password, til skifte-siden,
@@ -592,21 +618,11 @@ func loginUser(c *gin.Context) {
 	})
 }
 
-// changePassword gemmer et nyt password for den indloggede bruger
+// changePassword gemmer et nyt password for den indloggede bruger.
+// requireLogin har allerede tjekket, at brugeren er logget ind.
 func changePassword(c *gin.Context) {
 	session := sessions.Default(c)
-	username, ok := session.Get("username").(string)
-	if !ok {
-		if wantsHTML(c) {
-			c.Redirect(http.StatusSeeOther, "/login")
-			return
-		}
-		c.JSON(http.StatusUnauthorized, AuthResponse{
-			StatusCode: http.StatusUnauthorized,
-			Message:    "You are not logged in",
-		})
-		return
-	}
+	username, _ := session.Get("username").(string)
 
 	password := c.PostForm("password")
 	password2 := c.PostForm("password2")
