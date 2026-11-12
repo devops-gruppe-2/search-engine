@@ -1,83 +1,95 @@
-## 📝 Change Log
+# ¿Who Knows? – søgemaskine
 
-All changes to the project (code, server, domain and GitHub settings) are documented in [docs/aendringslog.md](docs/aendringslog.md): what changed, why, and how to check that it works.
+**Live:** https://whoknows-gruppe2.dk
 
----
+¿Who Knows? er en lille søgemaskine. Man kan søge i artikler, oprette en bruger, logge ind og se vejrudsigten for København.
 
-## 🛠️ Code Quality & Git Hooks (Linter)
+Projektet er lavet i faget DevOps på EK. Vi fik en gammel Python-app (`legacy/`), som var usikker og svær at drifte. Vi har skrevet den om til **Go** og bygget en DevOps-kæde rundt om den. Hver ændring bliver testet, sikkerhedsscannet og deployet automatisk.
 
-We use **`prek`** (a high-performance, Rust-based git hook manager) combined with **`golangci-lint` (v2)** to ensure that our Go webserver is secure, optimized, and free of resource leaks (like unclosed HTTP bodies or missing contexts) before code gets committed.
-
-Once activated, these checks will run automatically every time you execute `git commit`.
+Alle ændringer er beskrevet i **[ændringsloggen](docs/aendringslog.md)**. For hver ændring står der, hvad der er lavet, hvorfor, og hvordan man kan se, at det virker.
 
 ---
 
-### 🚀 Setup Instructions for the Team
+## 🧭 Sådan hænger det sammen
 
-To get the linter running on your local machine, follow these 3 simple steps:
+```text
+ Udvikler                 GitHub                                   Server (DigitalOcean)
+ ────────                 ──────                                   ─────────────────────
+ git push  ──►  Pull request ──► CI: lint, test, e2e, build, trivy
+                     │
+                     ▼  (merge, når alt er grønt)
+                   main  ──► CD: byg Docker-images ──► SSH ──►  docker compose
+                                                                  ├─ Nginx  (port 80/443, HTTPS)
+                                                                  └─ Go-app (port 8080, kun intern)
+                                                                        └─ SQLite: app.db
+```
 
-#### 1. Install `prek`
-If you don't have `prek` installed on your machine yet, install it using your preferred package manager:
+| Del | Teknologi |
+|---|---|
+| Backend | Go med Gin |
+| Database | SQLite, søgning med FTS5 |
+| Frontend | HTML-templates og CSS fra backend |
+| Webserver | Nginx (HTTPS og sikkerheds-headers) |
+| Container | Docker og Docker Compose |
+| CI/CD | GitHub Actions |
+| Server | DigitalOcean-droplet med Ubuntu |
+| Domæne og certifikat | `whoknows-gruppe2.dk` (one.com) og Let's Encrypt |
 
-*   **macOS / Linux (Homebrew):**
-    ```bash
-    brew install j178/tap/prek
-    ```
-*   **Windows (Scoop):**
-    ```bash
-    scoop bucket add j178 https://github.com
-    scoop install prek
-    ```
-*   **Alternative (Go toolchain):**
-    ```bash
-    go install ://github.com
-    ```
+---
 
-#### 2. Enable the Git Hook
-Navigate to the **root directory** of this repository and link `prek` to your local Git directory:
+## 📁 Mapper
+
+| Mappe | Indhold |
+|---|---|
+| `backend/` | Go-appen: `main.go` (routes, login, register), `search.go` (søgning), `weather.go` (vejr), templates og CSS |
+| `backend/cmd/crawler/` | Program, der henter Wikipedia-artikler ind i databasen |
+| `nginx/` | Nginx-opsætning til serveren og sikkerheds-headers |
+| `e2e/` | Browser-tests med Playwright |
+| `scripts/` | Smoke test |
+| `.github/` | CI/CD-workflows, Dependabot og PR- og issue-skabeloner |
+| `docs/` | Ændringsloggen |
+| `legacy/` | Den gamle Python-app, kun til sammenligning. Den kører ikke. |
+
+---
+
+## ▶️ Kør projektet på din egen computer
+
+Det kræver kun **Docker**:
 
 ```bash
-prek install
+docker compose up --build
 ```
-*This creates a lightweight script shim inside your local `.git/hooks/` directory.*
 
-#### 3. Verify your Setup
-Run the linter manually over all existing project files once to ensure your environment compiles successfully:
+Åbn http://localhost:8080. Stop igen med `Ctrl+C`.
+
+Vil du køre Go-appen direkte uden Docker, skal du have **Go** installeret:
 
 ```bash
-prek run --all-files
+cd backend
+go run .
 ```
-If everything is set up correctly, you will see a green **`golangci-lint...Passed`** status (or a list of issues you need to resolve in your local files before committing).
 
----
-
-### 💡 Good to Know
-
-*   **Zero Local Configuration Needed:** You don't need to manually install or update Go linters on your machine. `prek` reads our shared `prek.toml` and automatically downloads, caches, and runs the correct sandboxed binaries in the background.
-*   **Targeted Scans:** The linter is configured to run specifically inside our `/backend` module where our `go.mod` lives, preventing path-resolution and type-checking glitches.
-*   **Custom Rules:** You can see or adjust the specific active checksuites (such as `gosec` for SQL injection and `bodyclose` for HTTP leaks) inside the `backend/.golangci.yml` file.
- 
 ---
 
 ## 🧪 Tests
 
-| Type | Where | What it tests |
+| Type | Hvor | Hvad tester den |
 |---|---|---|
-| Unit tests | `backend/password_test.go` | Password hashing on its own (bcrypt, salt, passwords over 72 bytes) |
-| Integration tests | `backend/integration_test.go`, `backend/weather_test.go` | The whole app (routes, middleware, sessions and a real SQLite database) through HTTP requests: register (also many users at once, and logged in right after), login, logout, search, the forced password change, the selectors the simulator uses, and the weather page against a fake Open-Meteo |
-| End-to-end tests | `e2e/tests/` | A real browser (Playwright) using the site like a user: search, register, log in, log out, wrong password, weather page |
-| Smoke test | `scripts/smoke-test.sh` | The app starts in Docker and the front page answers |
+| Unit tests | `backend/password_test.go` | Hashing af passwords (bcrypt) |
+| Integrationstests | `backend/integration_test.go`, `search_test.go`, `weather_test.go`, `security_test.go` | Hele appen via HTTP med en rigtig database: register, login, logout, søgning, vejr og session-cookie |
+| E2E-tests | `e2e/tests/` | En rigtig browser bruger siden som en bruger |
+| Smoke test | `scripts/smoke-test.sh` | Appen starter i Docker, og forsiden svarer |
 
-All of them run in CI on every pull request (`test`, `e2e` and `build` jobs). `backend/security_test.go` checks the session cookie.
+Alle tests kører automatisk i CI ved hver pull request.
 
-Run the Go tests (each test gets its own temporary database):
+Kør Go-testene (hver test får sin egen midlertidige database):
 
 ```bash
 cd backend
 go test ./...
 ```
 
-Run the end-to-end tests against the app started with Docker Compose on port 8080:
+Kør E2E-testene mod appen i Docker:
 
 ```bash
 docker compose up --build -d
@@ -89,35 +101,38 @@ npx playwright test
 
 ---
 
-## 🌦️ Weather
+## 🔁 CI/CD
 
-`/weather` shows the weather forecast for Copenhagen for the next 7 days, and `/api/weather` returns the same data as JSON (`{"data": {...}}`).
+**CI** (`.github/workflows/ci.yml`) kører ved hver pull request. Alle fem jobs skal være grønne, før man kan merge (branch protection på `main`):
 
-The backend fetches the forecast from [Open-Meteo](https://open-meteo.com/), which is free and needs no API key. The forecast is cached for 30 minutes (`weatherCacheTTL` in `backend/weather.go`), so Open-Meteo is called at most about 48 times a day no matter how many users visit the page. If Open-Meteo is down, the last cached forecast is shown.
+| Job | Hvad den gør |
+|---|---|
+| `lint` | golangci-lint på Go-koden og Hadolint på Dockerfilerne |
+| `test` | Go-testene |
+| `e2e` | Starter appen i Docker og kører Playwright-testene |
+| `build` | Bygger appen og kører smoke testen |
+| `trivy` | Scanner Docker-images for kendte sårbarheder (HIGH og CRITICAL) |
 
-The tests in `backend/weather_test.go` use a fake Open-Meteo server, so they don't need internet access.
+**CD** (`.github/workflows/cd.yml`) kører, når CI er grøn på `main`:
+1. Bygger Docker-images til appen og Nginx og lægger dem på GitHub Container Registry med commit-nummeret som tag.
+2. Forbinder til serveren med SSH og kopierer `compose.prod.yml` derover.
+3. Starter de nye containere med `docker compose up -d`. Databasen ligger uden for containeren, så den bliver bevaret.
+4. Tjekker siden med Mozilla Observatory og skriver karakteren i jobbets opsummering.
 
 ---
 
-## 🔒 Security
+## 🔒 Sikkerhed
 
-- **Trivy** scans the backend and Nginx images in CI (`trivy` job) and fails on HIGH or CRITICAL vulnerabilities that have a fix.
-- **Mozilla Observatory** checks the deployed site after every deploy (CD job summary).
-- **Dependabot** opens a pull request every week when Go packages, Docker base images, GitHub Actions or Playwright have new versions (`.github/dependabot.yml`).
-- **Security headers** are set by Nginx in `nginx/security-headers.conf` (CSP, X-Frame-Options, X-Content-Type-Options, Referrer-Policy) plus HSTS on https.
-- **Session cookie** is signed with `SESSION_KEY` and is `Secure` and `HttpOnly` on https. Without `SESSION_KEY` the app creates a random key at startup, which logs users out on every restart.
+- **HTTPS** med Let's Encrypt. Http sendes videre til https, og HSTS er slået til.
+- **Sikkerheds-headers** fra Nginx (`nginx/security-headers.conf`): CSP, X-Frame-Options, X-Content-Type-Options og Referrer-Policy. Mozilla Observatory giver **A+**.
+- **Passwords** gemmes som bcrypt-hashes, aldrig i klartekst.
+- **Session-cookien** er signeret med `SESSION_KEY` og er `Secure` og `HttpOnly`. Nøglen står i `/opt/whoknows/.env` på serveren og aldrig i Git.
+- **SQL injection:** alle SQL-kald bruger parametre (`?`).
+- **Trivy** stopper pull requests med kendte sårbarheder.
+- **Dependabot** laver hver uge pull requests med opdateringer af Go-pakker, Docker-images, GitHub Actions og Playwright.
+- **Serveren:** firewall (`ufw`) med kun port 22, 80 og 443 åbne, og `fail2ban` mod brute force på SSH.
 
-Set the session key on the droplet once, so users stay logged in across deploys:
-
-```bash
-cd /opt/whoknows
-echo "SESSION_KEY=$(openssl rand -hex 32)" > .env
-chmod 600 .env
-```
-
-The key is picked up on the next deploy. Never commit it to Git.
-
-Run Trivy locally:
+Kør Trivy selv:
 
 ```bash
 docker build -t whoknows-backend:scan ./backend
@@ -126,133 +141,14 @@ docker run --rm -v /var/run/docker.sock:/var/run/docker.sock aquasec/trivy:0.69.
 
 ---
 
-## ☁️ Server Access
+## 🔎 Søgning
 
-The application is deployed on a DigitalOcean droplet running Ubuntu 26.04 LTS.
+Søgningen bruger SQLite **FTS5** (full text search) i stedet for `LIKE`:
+- Resultaterne sorteres efter relevans, og et ord i titlen tæller mere end et ord i teksten.
+- "languages" finder også "language".
+- Den er ca. 47 gange hurtigere end `LIKE` på 5.000 sider.
 
-SSH:
-
-```bash
-ssh deploy@157.245.66.153
-```
-
-An authorized SSH key is required.
-
-The firewall (`ufw`) only allows incoming traffic on ports 22 (SSH), 80 (HTTP) and 443 (HTTPS):
-
-```bash
-sudo ufw status verbose
-```
-
----
-
-## 🐳 Docker on the server
-
-The backend runs in a Docker container named:
-
-```text
-whoknows-backend
-```
-
-Check running containers:
-
-```bash
-docker ps
-```
-
-View logs:
-
-```bash
-docker logs whoknows-backend
-```
-
-Restart the backend:
-
-```bash
-docker restart whoknows-backend
-```
-
-The container uses:
-
-```text
---restart unless-stopped
-```
-
-so it starts automatically after a VM reboot unless it has been manually stopped.
-
----
-
-## 🚀 Automatic Deployment
-
-The project uses GitHub Actions for automatic deployment.
-
-When changes are merged to `main`:
-
-1. A new Docker image is built
-2. The image is pushed to GitHub Container Registry
-3. GitHub Actions connects to the droplet using SSH
-4. The VM pulls the newest image
-5. The old container is replaced with the new version
-
-Docker image:
-
-```text
-ghcr.io/devops-gruppe-2/search-engine:latest
-```
-
-Application:
-
-```text
-http://157.245.66.153
-```
-
----
-
-## 💾 Database
-
-The application uses SQLite.
-
-The active database on the droplet is:
-
-```text
-/opt/whoknows/app.db
-```
-
-The database is mounted into the Docker container as:
-
-```text
-/app/app.db
-```
-
-This keeps the database data when the container is replaced.
-
-Open the database:
-
-```bash
-sqlite3 /opt/whoknows/app.db
-```
-
-Show tables:
-
-```sql
-.tables
-```
-
-Exit SQLite:
-
-```sql
-.quit
-```
-
----
-
-## 🔎 Search (FTS5)
-
-Search uses SQLite **FTS5** (full text search) instead of `LIKE`. The virtual table `pages_fts` indexes `title` and `content` from `pages`, and triggers keep it up to date when pages are added, changed or deleted (also by the crawler). The index is created and rebuilt from `pages` when the app starts. The code is in `backend/search.go`.
-
-Results are ranked by relevance (`bm25`, a word in the title counts 10 times as much), and words like "languages" also find "language".
-
-Compare `LIKE` and FTS5 on 5,000 pages:
+Koden ligger i `backend/search.go`. Sammenlign selv hastigheden:
 
 ```bash
 cd backend
@@ -261,69 +157,87 @@ go test -bench Search -run '^$'
 
 ---
 
-## 💾 Database Backup
+## 🌦️ Vejr
 
-Automatic database backup is configured on the droplet.
+`/weather` viser vejrudsigten for København de næste 7 dage, og `/api/weather` giver de samme data som JSON.
 
-Backup script:
-
-```text
-/opt/whoknows/backup-db.sh
-```
-
-Local backups:
-
-```text
-/opt/whoknows/db-backups
-```
-
-Backups older than 14 days are deleted automatically.
-
-The backup runs every day at 02:00 using cron.
-
-Check the cron job:
-
-```bash
-crontab -l
-```
-
-Check the backup log:
-
-```bash
-cat /opt/whoknows/backup.log
-```
-
-
+Data kommer fra [Open-Meteo](https://open-meteo.com/), som er gratis og ikke kræver en API-nøgle. Udsigten gemmes i 30 minutter, så vi ikke spørger Open-Meteo ved hvert besøg. Hvis Open-Meteo er nede, vises den senest hentede udsigt.
 
 ---
 
-## 🕷️ Wikipedia Crawler
+## 🕷️ Wikipedia-crawler
 
-The search engine needs content in the `pages` table. The crawler in `backend/cmd/crawler` fetches Wikipedia articles from one or more categories and saves them as pages (title, URL, language, last updated and the article as plain text).
-
-It uses the Wikipedia API with a delay between requests and identifies itself with a User-Agent, so we don't put unnecessary load on Wikipedia. Running it again updates the articles that are already saved.
-
-Run it locally from the `backend` folder:
+Søgemaskinen skal have noget at søge i. Crawleren henter Wikipedia-artikler fra en eller flere kategorier og gemmer dem i tabellen `pages`. Den venter mellem hvert kald, så Wikipedia ikke bliver belastet.
 
 ```bash
+cd backend
 go run ./cmd/crawler -db ./app.db -limit 200
 ```
 
-Options:
-
-| Flag | Default | Description |
+| Flag | Standard | Betydning |
 |---|---|---|
-| `-db` | `./app.db` | Path to the SQLite database |
-| `-lang` | `en` | Wikipedia language (`en` or `da`) |
-| `-categories` | `Category:Programming languages,Category:Computer programming` | Comma separated categories |
-| `-limit` | `200` | Max number of articles |
-| `-delay` | `200ms` | Pause between requests |
+| `-db` | `./app.db` | Stien til databasen |
+| `-lang` | `en` | Wikipedia-sprog (`en` eller `da`) |
+| `-categories` | `Category:Programming languages,Category:Computer programming` | Kategorier adskilt med komma |
+| `-limit` | `200` | Højst så mange artikler |
+| `-delay` | `200ms` | Pause mellem kald |
 
-On the droplet the crawler is built as a Linux binary and placed in `/opt/whoknows/crawler`. Take a backup first, then run it as the `deploy` user:
+På serveren ligger crawleren i `/opt/whoknows/crawler`. Tag en backup først:
 
 ```bash
 /opt/whoknows/backup-db.sh
 cd /opt/whoknows && ./crawler -db /opt/whoknows/app.db -limit 800
 ```
 
-The output is logged to `/opt/whoknows/crawler.log` when it runs in the background.
+---
+
+## ☁️ Serveren
+
+Log ind (kræver en godkendt SSH-nøgle):
+
+```bash
+ssh deploy@157.245.66.153
+```
+
+Alt ligger i `/opt/whoknows`:
+
+| Fil eller mappe | Hvad |
+|---|---|
+| `compose.prod.yml` | Kopieres hertil af CD og starter appen og Nginx |
+| `.env` | `SESSION_KEY` (kun læsbar for `deploy`) |
+| `app.db` | Databasen |
+| `db-backups/` | Daglige backups |
+| `backup-db.sh` | Backup-scriptet |
+| `renew-cert.sh` | Fornyer HTTPS-certifikatet |
+
+Nyttige kommandoer:
+
+```bash
+cd /opt/whoknows
+docker compose -f compose.prod.yml ps
+docker compose -f compose.prod.yml logs -f backend
+sqlite3 app.db ".tables"
+sudo ufw status verbose
+```
+
+**Automatiske job (cron):**
+- **02:00:** Backup af databasen til `db-backups/`. Backups ældre end 14 dage slettes. Loggen ligger i `backup.log`.
+- **03:30:** certbot tjekker certifikatet og fornyer det, når der er under 30 dage tilbage.
+
+---
+
+## 🛠️ Linter før commit (valgfrit)
+
+Vi bruger [`prek`](https://github.com/j178/prek) sammen med `golangci-lint`, så Go-koden bliver tjekket, hver gang du laver `git commit`. Opsætningen står i `prek.toml` og `backend/.golangci.yml`. Den samme linter kører også i CI.
+
+```bash
+pip install prek
+prek install
+prek run --all-files
+```
+
+---
+
+## 👥 Gruppe
+
+DevOps-gruppe 2 på EK. Opgaver og fremdrift følges på [projekt-boardet](https://github.com/orgs/devops-gruppe-2/projects/1).
