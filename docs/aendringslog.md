@@ -6,6 +6,26 @@ Hver ændring i koden laves på en branch og merges til `main` via en pull reque
 
 ---
 
+## 2026-11-12 · README på dansk (PR #71)
+
+**Hvad var galt**
+- README'en var på engelsk og bestod af løse afsnit, der var tilføjet hen ad vejen. Den startede med linteren og forklarede ikke, hvad projektet er.
+- Nogle afsnit passede ikke længere: deploy med `docker run` og `docker restart` (vi bruger nu `docker compose`), og appen på `http://157.245.66.153` i stedet for domænet med https.
+- Installationskommandoerne til `prek` havde ødelagte links.
+
+**Hvad er ændret**
+- `README.md` er skrevet om på dansk og starter med, hvad projektet er, og et link til siden.
+- Nye afsnit: en tegning af, hvordan koden går fra push til server, en tabel over teknologier og en oversigt over mapperne.
+- Afsnittene om CI/CD, server og backup beskriver det, der kører nu.
+
+**Hvorfor**
+- En ny i gruppen, eller en censor, skal kunne forstå projektet og køre det uden at spørge nogen.
+
+**Se at det virker**
+- Åbn repoet på GitHub og læs README'en fra toppen.
+
+---
+
 ## 2026-11-10 · Nginx bliver på stable-sporet og henter Alpine-rettelser (PR #66)
 
 **Hvad var galt**
