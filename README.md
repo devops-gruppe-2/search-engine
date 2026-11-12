@@ -128,6 +128,7 @@ npx playwright test
 - **Passwords** gemmes som bcrypt-hashes, aldrig i klartekst.
 - **Session-cookien** er signeret med `SESSION_KEY` og er `Secure` og `HttpOnly`. Nøglen står i `/opt/whoknows/.env` på serveren og aldrig i Git.
 - **SQL injection:** alle SQL-kald bruger parametre (`?`).
+- **Login-krav:** sider, der kræver login, ligger i en route-gruppe med middlewaren `requireLogin` (`backend/main.go`).
 - **Trivy** stopper pull requests med kendte sårbarheder.
 - **Dependabot** laver hver uge pull requests med opdateringer af Go-pakker, Docker-images, GitHub Actions og Playwright.
 - **Serveren:** firewall (`ufw`) med kun port 22, 80 og 443 åbne, og `fail2ban` mod brute force på SSH.
