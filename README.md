@@ -158,6 +158,22 @@ go test -bench Search -run '^$'
 
 ---
 
+## 📊 Logning af søgninger
+
+Hver søgning skrives som én linje JSON i `logs/searches.log` (med Go's `log/slog`). Brugernavn og IP-adresse logges ikke. Loggen viser, hvad brugerne søger efter, og især hvad de ikke finder, så vi ved, hvad crawleren skal hente.
+
+Se en opsummering:
+
+```bash
+# På serveren
+docker exec whoknows-backend ./searchstats
+
+# Lokalt fra backend-mappen
+go run ./cmd/searchstats -file logs/searches.log
+```
+
+---
+
 ## 🌦️ Vejr
 
 `/weather` viser vejrudsigten for København de næste 7 dage, og `/api/weather` giver de samme data som JSON.
@@ -207,6 +223,7 @@ Alt ligger i `/opt/whoknows`:
 | `compose.prod.yml` | Kopieres hertil af CD og starter appen og Nginx |
 | `.env` | `SESSION_KEY` (kun læsbar for `deploy`) |
 | `app.db` | Databasen |
+| `logs/searches.log` | Logning af søgninger |
 | `db-backups/` | Daglige backups |
 | `backup-db.sh` | Backup-scriptet |
 | `renew-cert.sh` | Fornyer HTTPS-certifikatet |

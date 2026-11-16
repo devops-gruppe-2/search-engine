@@ -1,3 +1,4 @@
 .idea/
 backend/app.db
 backend/cookies.txt
+backend/logs/

@@ -11,6 +11,7 @@ import (
 	"net/mail"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/gin-contrib/sessions"
 	"github.com/gin-contrib/sessions/cookie"
@@ -87,6 +88,10 @@ func main() {
 	}()
 
 	fmt.Println("Database initialized successfully")
+
+	// Hver søgning logges til en fil (se searchlog.go)
+	searchLogFile := startSearchLog()
+	defer func() { _ = searchLogFile.Close() }()
 
 	router := setupRouter()
 
@@ -699,6 +704,7 @@ func SearchAPI(c *gin.Context) {
 	}
 	language := c.DefaultQuery("language", "en")
 
+	started := time.Now()
 	results, err := searchPages(c.Request.Context(), SearchParameter, language)
 	if err != nil {
 		log.Printf("Search failed: %v", err)
@@ -708,6 +714,7 @@ func SearchAPI(c *gin.Context) {
 		})
 		return
 	}
+	logSearch(c, "api", SearchParameter, language, len(results), time.Since(started))
 
 	c.JSON(http.StatusOK, APIUserSearchResponse{
 		Status:        "success",
@@ -729,6 +736,7 @@ func HTMLSearchFunctionData(c *gin.Context) {
 		return
 	}
 
+	started := time.Now()
 	results, err := searchPages(c.Request.Context(), searchParameter, language)
 	if err != nil {
 		log.Printf("Search failed: %v", err)
@@ -739,6 +747,8 @@ func HTMLSearchFunctionData(c *gin.Context) {
 		}))
 		return
 	}
+
+	logSearch(c, "web", searchParameter, language, len(results), time.Since(started))
 
 	var errorMessage string
 	if len(results) == 0 {
