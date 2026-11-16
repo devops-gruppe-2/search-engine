@@ -7,14 +7,15 @@ RUN go mod download
 
 COPY . .
 
-# Byg hele pakken (main.go, weather.go osv.), ikke kun main.go
-RUN go build -o backend .
+# Byg hele pakken (main.go, weather.go osv.), ikke kun main.go, og værktøjet
+# der opsummerer søge-loggen (docker exec whoknows-backend ./searchstats)
+RUN go build -o backend . && go build -o searchstats ./cmd/searchstats
 
 FROM debian:bookworm-slim
 
 WORKDIR /app
 
-COPY --from=builder /app/backend .
+COPY --from=builder /app/backend /app/searchstats ./
 # Rodcertifikater, så backenden kan kalde Open-Meteo over HTTPS
 COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
 COPY --from=builder /app/static ./static

@@ -10,6 +10,8 @@ services:
       SESSION_KEY: ${SESSION_KEY:-}
     volumes:
       - /opt/whoknows/app.db:/app/app.db
+      # Søge-loggen (logs/searches.log) bliver bevaret, når containeren skiftes ud
+      - /opt/whoknows/logs:/app/logs
     # Kun Nginx kan nå appen. Den er ikke åben direkte mod internettet.
     expose:
       - "8080"

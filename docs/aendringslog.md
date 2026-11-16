@@ -6,6 +6,44 @@ Hver ændring i koden laves på en branch og merges til `main` via en pull reque
 
 ---
 
+## 2026-11-16 · Logning af søgninger (PR #74, issue #70)
+
+**Hvad var galt**
+- Vi vidste ikke, hvad brugerne søger efter, eller hvilke søgninger der ikke giver resultater. Crawleren hentede bare artikler om programmering, uden at vi vidste, om det var det, brugerne ville have.
+- Opgaven *Let them search* siger: brug logning til at se, hvad brugerne søger efter, og brug det til at vælge, hvad der skal crawles.
+
+**Hvad er ændret**
+- `backend/searchlog.go` (ny): hver søgning skrives som én linje JSON i `logs/searches.log` med Go's indbyggede `log/slog`. Både søgesiden (`source: "web"`) og API'et (`source: "api"`) logges. Eksempel:
+  ```json
+  {"time":"2026-11-16T13:22:12Z","level":"INFO","msg":"search","query":"kubernetes","language":"en","results":0,"source":"web","logged_in":false,"duration_ms":0}
+  ```
+- Søgningen gøres ens før den logges: små bogstaver og ét mellemrum, så "  Python  Tutorial" og "python tutorial" tæller som den samme. Meget lange søgninger forkortes til 200 tegn.
+- **Ingen persondata:** brugernavn og IP-adresse logges ikke, kun om brugeren er logget ind. Filen har rettighederne `0600`.
+- `backend/cmd/searchstats` (ny): læser loggen og viser antal søgninger, søgninger pr. dag, de mest søgte og **de mest søgte uden resultater**. Det er listen over, hvad crawleren skal hente.
+- `backend/Dockerfile`: `searchstats` bygges med ind i imaget.
+- `compose.prod.yml`: `/opt/whoknows/logs` er mountet som `/app/logs`, så loggen bliver bevaret ved deploy.
+
+**Hvorfor sådan**
+- Anders skriver *"Do not overengineer this task"* og foreslår at skrive linjer til en fil og bruge sprogets indbyggede logning. ELK eller Datadog bruger meget hukommelse og tager lang tid at sætte op.
+- **En fil og ikke en tabel i databasen:** logningen giver ikke ekstra skrivninger i SQLite, som kun kan have én skriver ad gangen, og den skal ikke flyttes med, når vi skifter til PostgreSQL.
+- **JSON-linjer** er et struktureret format. Hver linje kan læses af et program (`searchstats`, `jq` eller senere et log-system), og det er nemt at tælle på.
+- `duration_ms` og `results` kan senere bruges til monitoring og KPI'er (søgninger pr. dag).
+
+**Tests**
+- `TestSearchesAreLogged`: API og søgeside logger søgning, sprog, antal resultater og kilde.
+- `TestSearchLogHasNoPersonalData`: brugernavn og IP kommer ikke i loggen.
+- `TestEmptySearchesAreNotLogged`, `TestNormalizeQuery`, `TestOpenSearchLogAppendsToFile`.
+- `cmd/searchstats`: `TestSummarize` og `TestSummarizeShowsOnlyTop`.
+
+**Se at det virker (på serveren)**
+- `tail -n 5 /opt/whoknows/logs/searches.log`
+- `docker exec whoknows-backend ./searchstats`
+
+**Bemærk**
+- Filen vokser. Én linje fylder ca. 180 bytes, så 100.000 søgninger er ca. 18 MB. Bliver den for stor, kan den roteres med `logrotate`.
+
+---
+
 ## 2026-11-12 · requireLogin-middleware og HEAD-requests (PR #72, issue #31)
 
 **Hvad var galt**
