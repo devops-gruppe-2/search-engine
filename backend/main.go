@@ -109,6 +109,8 @@ func setupRouter() *gin.Engine {
 	store.Options(cookieOptions(false, sessionMaxAge))
 
 	router.Use(sessions.Sessions("user_session", store))
+	// Måler hvert request til Prometheus (se metrics.go)
+	router.Use(metricsMiddleware)
 	router.Use(secureCookieOverHTTPS)
 	router.Use(requirePasswordChange)
 
@@ -123,6 +125,9 @@ func setupRouter() *gin.Engine {
 
 	// CSS og andre statiske filer
 	router.Static("/static", "./static")
+
+	// Tallene til Prometheus. Nginx svarer 404 på /metrics udefra.
+	router.GET("/metrics", metricsHandler)
 
 	getAndHead(router, "/register", func(c *gin.Context) {
 		if isLoggedIn(c) {
@@ -433,10 +438,12 @@ func registerUser(c *gin.Context) {
 	problems, err := validateRegistration(c.Request.Context(), username, email, password, password2)
 	if err != nil {
 		log.Printf("Register validation failed: %v", err)
+		registrationsTotal.WithLabelValues("error").Inc()
 		registerFailed(http.StatusInternalServerError, "Failed to register user")
 		return
 	}
 	if len(problems) > 0 {
+		registrationsTotal.WithLabelValues("invalid").Inc()
 		if wantsHTML(c) {
 			formData["Error"] = problems[0].Msg
 			c.HTML(http.StatusUnprocessableEntity, "register.html", pageData(c, formData))
@@ -448,6 +455,7 @@ func registerUser(c *gin.Context) {
 
 	hash, err := hashPassword(password)
 	if err != nil {
+		registrationsTotal.WithLabelValues("error").Inc()
 		registerFailed(http.StatusInternalServerError, "Failed to register user")
 		return
 	}
@@ -455,9 +463,11 @@ func registerUser(c *gin.Context) {
 	query := "INSERT INTO users (username, email, password) VALUES (?, ?, ?)"
 	if _, err := db.ExecContext(c.Request.Context(), query, username, email, hash); err != nil {
 		log.Printf("Register insert failed: %v", err)
+		registrationsTotal.WithLabelValues("error").Inc()
 		registerFailed(http.StatusInternalServerError, "Failed to register user")
 		return
 	}
+	registrationsTotal.WithLabelValues("success").Inc()
 
 	// Brugeren logges ind med det samme, så de ikke skal skrive det hele igen på login-siden
 	// (User feedback survey). Nye brugere har et bcrypt-hash og skal ikke skifte password.
@@ -561,6 +571,7 @@ func loginUser(c *gin.Context) {
 	if username == "" || password == "" {
 		//JSON-svar sendes tilbage til klienten
 		//ttp.StatusBadRequest er HTTP-status 422
+		loginsTotal.WithLabelValues("missing").Inc()
 		loginFailed(http.StatusUnprocessableEntity, "Username and password are required")
 		return
 	}
@@ -576,12 +587,14 @@ func loginUser(c *gin.Context) {
 	//Hvis der skulle opstå en fejl under databaseopslaget
 	if err != nil {
 		//HTTP sender 401 til brugeren
+		loginsTotal.WithLabelValues("failed").Inc()
 		loginFailed(http.StatusUnauthorized, "Invalid username or password")
 		//Her asluttes JSON-objektet
 		return
 	}
 
 	if !checkPassword(storedHash, password) {
+		loginsTotal.WithLabelValues("failed").Inc()
 		loginFailed(http.StatusUnauthorized, "Invalid username or password")
 		return
 	}
@@ -595,12 +608,14 @@ func loginUser(c *gin.Context) {
 
 	// Gem sessionen og send cookien tilbage til browseren
 	if err := session.Save(); err != nil {
+		loginsTotal.WithLabelValues("error").Inc()
 		loginFailed(http.StatusInternalServerError, "Failed to create session")
 		return
 	}
 
 	// Password fra før bcrypt: brugeren skal vælge et nyt, før noget andet virker
 	if mustChange {
+		loginsTotal.WithLabelValues("must_change_password").Inc()
 		if wantsHTML(c) {
 			c.Redirect(http.StatusSeeOther, "/change-password")
 			return
@@ -611,6 +626,8 @@ func loginUser(c *gin.Context) {
 		})
 		return
 	}
+
+	loginsTotal.WithLabelValues("success").Inc()
 
 	// En bruger i browseren sendes til forsiden, hvor log ud-linket nu vises
 	if wantsHTML(c) {

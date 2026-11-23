@@ -6,6 +6,43 @@ Hver ændring i koden laves på en branch og merges til `main` via en pull reque
 
 ---
 
+## 2026-11-23 · Monitoring med Prometheus og Grafana (PR #79)
+
+**Hvad var galt**
+- Vi havde kun health monitoring (Postman: er siden oppe?) og søge-loggen. Vi kunne ikke se over tid, hvordan brugerne bruger produktet.
+- Anders' krav til opgaven *Monitoring*: monitoring skal være **brugerfokuseret** ("monitoring is for asking questions"), ikke CPU og RAM, og vi skal kunne begrunde, hvorfor vi måler netop det.
+
+**Hvad vi måler, og hvorfor**
+| Spørgsmål om brugerne | Måling | Hvorfor |
+|---|---|---|
+| Finder brugerne det, de søger efter? | `whoknows_searches_total{source, results}` (`found`/`none`) | Søgning er produktets kerne. Søge-loggen viste, at 23 % ikke fandt noget, og nu kan vi se, om tallet falder, når vi forbedrer søgningen. |
+| Kan brugerne komme ind? | `whoknows_logins_total{result}` og `whoknows_registrations_total{result}` | Mange fejlede logins eller afviste registreringer betyder, at brugerne går i stå eller at nogen prøver at gætte passwords. |
+| Hvor mange bruger produktet? | `whoknows_users_total` og `whoknows_active_users_today` | Vokser vi? Hvor mange er aktive, og ikke bare oprettet? |
+| Hvor længe venter brugerne? | `whoknows_request_duration_milliseconds{route}` og `whoknows_http_responses_total{route, status}` | Langsomme sider og fejlsider (5xx) er det, brugeren mærker. |
+
+**Hvad er ændret**
+- `backend/metrics.go` (ny): tællerne med Prometheus' Go-bibliotek (`client_golang`), en middleware der måler hvert request, og `/metrics`. Opbygningen er som i Anders' eksempel (`whoknows_variations`, branch `monitoring`): Counter, Histogram og Gauge, `/metrics` og samme navne for svar og svartid.
+- `backend/main.go` og `backend/searchlog.go`: tællerne kaldes ved login, registrering og søgning.
+- Route-mønsteret bruges som label (fx `/api/search`), ikke den fulde URL, så hver søgning ikke bliver en ny tidsserie.
+- Aktive brugere tælles i hukommelsen pr. dag. Kun antallet vises, aldrig brugernavne.
+- `nginx/nginx.conf` og `nginx/nginx.prod.conf`: `/metrics` giver `404` udefra. Prometheus henter tallene direkte fra `backend:8080` i Docker-netværket.
+- `monitoring/prometheus.yml` (ny): Prometheus henter fra appen hvert 15. sekund (pull).
+- `monitoring/grafana/` (ny): Grafana får Prometheus som datakilde og dashboardet **"Who Knows – brugerne"** automatisk ved opstart. Dashboardet ligger i Git (`whoknows.json`).
+- `compose.yml`: Prometheus og Grafana i profilen `monitoring`, så CI og `docker compose up` kører som før.
+
+**Tests**
+- `backend/metrics_test.go`: `/metrics` viser målingerne, søgninger tælles som `found`/`none`, logins og registreringer tælles efter resultat, antal brugere, aktive brugere pr. dag og route-mønstre.
+- Kørt lokalt: `/metrics` giver `404` gennem Nginx, Prometheus' targets er `up`, og alle 10 forespørgsler i dashboardet virker.
+
+**Se at det virker (lokalt)**
+- `docker compose --profile monitoring up --build`
+- Søg og log ind på http://localhost:8080, og åbn Grafana på http://localhost:3000 (admin / admin) → Dashboards → Who Knows → **Who Knows – brugerne**.
+
+**Mangler**
+- Det kører kun lokalt. Næste skridt er at sætte det op på en server og lægge dashboard-linket i `repositories.py` (opgaven *Monitoring PR*). Anders anbefaler, at monitoring ikke kører på samme server som appen.
+
+---
+
 ## 2026-11-23 · Nginx 1.30.7 (sikkerhedsrettelse, PR #80)
 
 **Hvad var galt**
