@@ -12,3 +12,30 @@ services:
       - ./nginx/security-headers.conf:/etc/nginx/security-headers.conf:ro
     depends_on:
       - backend
+
+  # Monitoring, ligesom Anders' eksempel i whoknows_variations (branch monitoring).
+  # Starter kun med: docker compose --profile monitoring up --build
+  # Prometheus: http://localhost:9090   Grafana: http://localhost:3000
+  prometheus:
+    image: prom/prometheus:v3.15.1
+    profiles: [monitoring]
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    depends_on:
+      - backend
+
+  grafana:
+    image: grafana/grafana:13.2.6
+    profiles: [monitoring]
+    ports:
+      - "3000:3000"
+    environment:
+      # Lokalt er login admin / admin. På serveren sættes et rigtigt password i .env.
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+    volumes:
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    depends_on:
+      - prometheus

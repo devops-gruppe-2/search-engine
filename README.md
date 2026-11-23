@@ -174,6 +174,31 @@ go run ./cmd/searchstats -file logs/searches.log
 
 ---
 
+## 📈 Monitoring (Prometheus og Grafana)
+
+Appen tæller, hvordan brugerne bruger produktet, og viser tallene på `/metrics`. Prometheus henter dem hvert 15. sekund, og Grafana viser dem på dashboardet **"Who Knows – brugerne"**:
+
+| Spørgsmål | Måling |
+|---|---|
+| Finder brugerne det, de søger efter? | `whoknows_searches_total{results="found"/"none"}` |
+| Kan brugerne logge ind og oprette sig? | `whoknows_logins_total`, `whoknows_registrations_total` |
+| Hvor mange brugere har vi, og hvor mange er aktive i dag? | `whoknows_users_total`, `whoknows_active_users_today` |
+| Hvor længe venter brugerne? | `whoknows_request_duration_milliseconds` |
+
+Kør det lokalt:
+
+```bash
+docker compose --profile monitoring up --build
+```
+
+- Appen: http://localhost:8080
+- Prometheus: http://localhost:9090
+- Grafana: http://localhost:3000 (admin / admin)
+
+`/metrics` kan ikke ses udefra. Nginx svarer `404`, og Prometheus henter tallene direkte fra appen i Docker-netværket.
+
+---
+
 ## 🌦️ Vejr
 
 `/weather` viser vejrudsigten for København de næste 7 dage, og `/api/weather` giver de samme data som JSON.

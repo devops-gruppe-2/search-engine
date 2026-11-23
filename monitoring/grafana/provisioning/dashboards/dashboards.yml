@@ -1,0 +1,11 @@
+# Grafana indlæser dashboardene i monitoring/grafana/dashboards ved opstart.
+# Så ligger dashboardet i Git og kommer med, hver gang Grafana startes.
+apiVersion: 1
+
+providers:
+  - name: whoknows
+    folder: Who Knows
+    type: file
+    allowUiUpdates: true
+    options:
+      path: /var/lib/grafana/dashboards
