@@ -6,6 +6,24 @@ Hver ændring i koden laves på en branch og merges til `main` via en pull reque
 
 ---
 
+## 2026-11-23 · Nginx 1.30.7 (sikkerhedsrettelse, PR #80)
+
+**Hvad var galt**
+- Trivy stoppede alle pull requests: `nginx:1.30.6-alpine` havde **6 kendte sårbarheder i selve Nginx** (4 CRITICAL, 2 HIGH), bl.a. en use-after-free i Nginx' worker-proces (CVE-2026-113425).
+- Rettelsen findes i Nginx 1.30.7. `apk upgrade` i vores Dockerfile hjælper ikke her, fordi Nginx-pakken kommer fra Nginx' eget image og ikke fra Alpine.
+
+**Hvad er ændret**
+- `nginx/Dockerfile`: `FROM nginx:1.30.6-alpine` → `FROM nginx:1.30.7-alpine`. Det er en patch-opdatering på stable-sporet, ligesom vores Dependabot-regel tillader.
+
+**Hvorfor**
+- Det er Nginx, der tager imod al trafik fra internettet, så en CRITICAL-sårbarhed dér skal rettes med det samme.
+- Trivy i CI og branch protection gjorde, at det blev opdaget, før en sårbar version kunne deployes igen.
+
+**Se at det virker**
+- Trivy på det nye image: 0 HIGH/CRITICAL.
+
+---
+
 ## 2026-11-16 · Logning af søgninger (PR #74, issue #70)
 
 **Hvad var galt**
