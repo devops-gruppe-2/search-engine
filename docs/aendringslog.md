@@ -6,6 +6,44 @@ Hver ændring i koden laves på en branch og merges til `main` via en pull reque
 
 ---
 
+## 2026-11-24 · Monitoring på serveren med Grafana Cloud (PR #81)
+
+**Hvad var galt**
+- Monitoring (PR #79) kørte kun lokalt. Anders skal kunne se vores dashboard (opgaven *Monitoring PR*), og det skal vise rigtige tal fra serveren.
+- Anders anbefaler, at monitoring **ikke** kører på samme server som appen: går serveren ned, går monitoring også ned, og så kan man ikke se, hvad der skete.
+
+**Valg**
+| Mulighed | Valgt? | Hvorfor |
+|---|---|---|
+| Grafana Cloud (gratis) | ✅ | Dashboard og database ligger hos Grafana, ikke på dropletten. Gratis. |
+| Ny droplet kun til monitoring | ❌ | Ca. $6 + moms om måneden ekstra og mere at vedligeholde |
+| Prometheus og Grafana på samme droplet | ❌ | Imod Anders' anbefaling, og dropletten har kun 2 GB RAM |
+
+**Hvad er ændret**
+- `monitoring/prometheus.agent.yml` (ny): Prometheus i **agent-mode**. Den henter `/metrics` fra appen hvert 15. sekund, ligesom lokalt, og sender tallene til Grafana Cloud med `remote_write`. Den gemmer kun en lille buffer selv.
+- `compose.prod.yml`: ny service `prometheus` (`prom/prometheus:v3.15.1`) uden åbne porte og med `mem_limit: 256m`, så den ikke kan tage hukommelsen fra appen.
+- `.github/workflows/cd.yml`: kopierer også `monitoring/prometheus.agent.yml` til serveren.
+- `monitoring/grafana/dashboards/whoknows.json`: dashboardet bruger en datakilde-variabel, så den samme fil virker både lokalt og i Grafana Cloud.
+
+**Hemmeligheder**
+- API-tokenen til Grafana Cloud står kun på serveren i `/opt/whoknows/secrets/grafana-cloud-token` og aldrig i Git. Prometheus læser den med `password_file`.
+- Instance ID (`3799470`) og URL'en er ikke hemmelige og står i konfigurationen.
+
+**Før merge (på serveren, én gang)**
+```bash
+mkdir -p /opt/whoknows/secrets && chmod 700 /opt/whoknows/secrets
+nano /opt/whoknows/secrets/grafana-cloud-token   # indsæt tokenen
+chmod 644 /opt/whoknows/secrets/grafana-cloud-token
+chown -R deploy:deploy /opt/whoknows/secrets
+```
+Mappen er kun åben for `deploy`. Filen skal kunne læses af Prometheus i containeren, som ikke kører som `deploy`.
+
+**Se at det virker**
+- `docker logs whoknows-prometheus` viser ingen fejl om `remote_write`.
+- I Grafana Cloud: Explore → `whoknows_users_total` viser antal brugere fra serveren.
+
+---
+
 ## 2026-11-23 · Monitoring med Prometheus og Grafana (PR #79)
 
 **Hvad var galt**
@@ -39,7 +77,7 @@ Hver ændring i koden laves på en branch og merges til `main` via en pull reque
 - Søg og log ind på http://localhost:8080, og åbn Grafana på http://localhost:3000 (admin / admin) → Dashboards → Who Knows → **Who Knows – brugerne**.
 
 **Mangler**
-- Det kører kun lokalt. Næste skridt er at sætte det op på en server og lægge dashboard-linket i `repositories.py` (opgaven *Monitoring PR*). Anders anbefaler, at monitoring ikke kører på samme server som appen.
+- Det kører kun lokalt. Serveren kom i PR #81 (Grafana Cloud).
 
 ---
 

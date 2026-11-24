@@ -29,3 +29,26 @@ services:
     depends_on:
       - backend
     restart: unless-stopped
+
+  # Monitoring: Prometheus i agent-mode henter /metrics fra appen og sender tallene til
+  # Grafana Cloud, hvor dashboardet ligger (se monitoring/prometheus.agent.yml).
+  # Har ingen porte åbne og gemmer kun en lille buffer, indtil tallene er sendt.
+  prometheus:
+    image: prom/prometheus:v3.15.1
+    container_name: whoknows-prometheus
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --agent
+      - --storage.agent.path=/prometheus
+    volumes:
+      - /opt/whoknows/monitoring/prometheus.agent.yml:/etc/prometheus/prometheus.yml:ro
+      - /opt/whoknows/secrets/grafana-cloud-token:/etc/prometheus/grafana-cloud-token:ro
+      - prometheus-data:/prometheus
+    # Monitoring må ikke tage hukommelsen fra appen
+    mem_limit: 256m
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+volumes:
+  prometheus-data:
