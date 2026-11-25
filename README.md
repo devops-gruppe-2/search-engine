@@ -197,6 +197,8 @@ docker compose --profile monitoring up --build
 
 `/metrics` kan ikke ses udefra. Nginx svarer `404`, og Prometheus henter tallene direkte fra appen i Docker-netværket.
 
+**På serveren** kører Prometheus i agent-mode (`monitoring/prometheus.agent.yml`). Den henter tallene fra appen og sender dem til **Grafana Cloud**, hvor dashboardet ligger. Så kører monitoring ikke på samme server som appen. API-tokenen ligger kun på serveren i `/opt/whoknows/secrets/grafana-cloud-token`.
+
 ---
 
 ## 🌦️ Vejr

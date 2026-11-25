@@ -33,7 +33,7 @@
       "description": "Hvor mange brugere har vi? Vokser tallet?",
       "datasource": {
         "type": "prometheus",
-        "uid": "prometheus"
+        "uid": "${datasource}"
       },
       "gridPos": {
         "x": 0,
@@ -45,7 +45,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "prometheus"
+            "uid": "${datasource}"
           },
           "refId": "A",
           "expr": "whoknows_users_total",
@@ -76,7 +76,7 @@
       "description": "Hvor mange forskellige brugere har brugt siden logget ind i dag (UTC)?",
       "datasource": {
         "type": "prometheus",
-        "uid": "prometheus"
+        "uid": "${datasource}"
       },
       "gridPos": {
         "x": 6,
@@ -88,7 +88,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "prometheus"
+            "uid": "${datasource}"
           },
           "refId": "A",
           "expr": "whoknows_active_users_today",
@@ -119,7 +119,7 @@
       "description": "Hvor meget bliver søgemaskinen brugt?",
       "datasource": {
         "type": "prometheus",
-        "uid": "prometheus"
+        "uid": "${datasource}"
       },
       "gridPos": {
         "x": 12,
@@ -131,7 +131,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "prometheus"
+            "uid": "${datasource}"
           },
           "refId": "A",
           "expr": "sum(increase(whoknows_searches_total[24h]))",
@@ -164,7 +164,7 @@
       "description": "Hvor stor en del af søgningerne finder ingenting? Det skal ned.",
       "datasource": {
         "type": "prometheus",
-        "uid": "prometheus"
+        "uid": "${datasource}"
       },
       "gridPos": {
         "x": 18,
@@ -176,7 +176,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "prometheus"
+            "uid": "${datasource}"
           },
           "refId": "A",
           "expr": "100 * sum(increase(whoknows_searches_total{results=\"none\"}[24h])) / sum(increase(whoknows_searches_total[24h]))",
@@ -240,7 +240,7 @@
       "description": "Søgninger der fandt noget (found) og søgninger uden resultat (none).",
       "datasource": {
         "type": "prometheus",
-        "uid": "prometheus"
+        "uid": "${datasource}"
       },
       "gridPos": {
         "x": 0,
@@ -252,7 +252,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "prometheus"
+            "uid": "${datasource}"
           },
           "refId": "A",
           "expr": "sum by (results) (increase(whoknows_searches_total[1h]))",
@@ -289,7 +289,7 @@
       "description": "Falder andelen, når vi forbedrer søgningen eller crawler mere?",
       "datasource": {
         "type": "prometheus",
-        "uid": "prometheus"
+        "uid": "${datasource}"
       },
       "gridPos": {
         "x": 12,
@@ -301,7 +301,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "prometheus"
+            "uid": "${datasource}"
           },
           "refId": "A",
           "expr": "100 * sum(increase(whoknows_searches_total{results=\"none\"}[1h])) / sum(increase(whoknows_searches_total[1h]))",
@@ -351,7 +351,7 @@
       "description": "Lykkes det for brugerne at logge ind, eller fejler det (forkert password, manglende felter)?",
       "datasource": {
         "type": "prometheus",
-        "uid": "prometheus"
+        "uid": "${datasource}"
       },
       "gridPos": {
         "x": 0,
@@ -363,7 +363,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "prometheus"
+            "uid": "${datasource}"
           },
           "refId": "A",
           "expr": "sum by (result) (increase(whoknows_logins_total[1h]))",
@@ -400,7 +400,7 @@
       "description": "Opretter folk sig, og hvor mange bliver afvist (invalid) eller fejler hos os (error)?",
       "datasource": {
         "type": "prometheus",
-        "uid": "prometheus"
+        "uid": "${datasource}"
       },
       "gridPos": {
         "x": 12,
@@ -412,7 +412,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "prometheus"
+            "uid": "${datasource}"
           },
           "refId": "A",
           "expr": "sum by (result) (increase(whoknows_registrations_total[1h]))",
@@ -462,7 +462,7 @@
       "description": "95 % af brugerne får svar hurtigere end dette, pr. side.",
       "datasource": {
         "type": "prometheus",
-        "uid": "prometheus"
+        "uid": "${datasource}"
       },
       "gridPos": {
         "x": 0,
@@ -474,7 +474,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "prometheus"
+            "uid": "${datasource}"
           },
           "refId": "A",
           "expr": "histogram_quantile(0.95, sum by (le, route) (rate(whoknows_request_duration_milliseconds_bucket[5m])))",
@@ -511,7 +511,7 @@
       "description": "Svar med status 500-599. Brugeren ser en fejlside.",
       "datasource": {
         "type": "prometheus",
-        "uid": "prometheus"
+        "uid": "${datasource}"
       },
       "gridPos": {
         "x": 12,
@@ -523,7 +523,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "prometheus"
+            "uid": "${datasource}"
           },
           "refId": "A",
           "expr": "sum by (route) (increase(whoknows_http_responses_total{status=~\"5..\"}[1h]))",
@@ -555,7 +555,19 @@
     }
   ],
   "templating": {
-    "list": []
+    "list": [
+      {
+        "name": "datasource",
+        "label": "Datakilde",
+        "type": "datasource",
+        "query": "prometheus",
+        "current": {},
+        "hide": 0,
+        "refresh": 1,
+        "options": [],
+        "regex": ""
+      }
+    ]
   },
   "annotations": {
     "list": []
