@@ -12,7 +12,6 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
-	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -35,12 +34,7 @@ type testApp struct {
 func newTestApp(t *testing.T) *testApp {
 	t.Helper()
 
-	var err error
-	db, err = initDB(filepath.Join(t.TempDir(), "test.db"))
-	if err != nil {
-		t.Fatalf("initDB: %v", err)
-	}
-	t.Cleanup(func() { _ = db.Close() })
+	openTestDB(t)
 
 	server := httptest.NewServer(setupRouter())
 	t.Cleanup(server.Close)
@@ -369,7 +363,7 @@ func TestSearchReturnsMatchingPagesInTheChosenLanguage(t *testing.T) {
 		{"Go (dansk)", "https://da.wikipedia.org/wiki/Go", "da", "Go er et programmeringssprog fra Google."},
 	}
 	for _, p := range pages {
-		_, err := db.ExecContext(t.Context(), "INSERT INTO pages (title, url, language, content) VALUES (?, ?, ?, ?)", p.title, p.url, p.language, p.content)
+		_, err := db.ExecContext(t.Context(), "INSERT INTO pages (title, url, language, content) VALUES ($1, $2, $3, $4)", p.title, p.url, p.language, p.content)
 		if err != nil {
 			t.Fatal(err)
 		}

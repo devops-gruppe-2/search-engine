@@ -2,6 +2,29 @@ services:
   backend:
     build:
       context: ./backend
+    environment:
+      DATABASE_URL: postgres://whoknows:whoknows@postgres:5432/whoknows?sslmode=disable
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # PostgreSQL lokalt og i CI. Lokalt er password bare "whoknows". På serveren er det
+  # et rigtigt password i /opt/whoknows/.env (se compose.prod.yml).
+  # Porten er åben på localhost, så Go-testene kan køre mod den:
+  #   TEST_DATABASE_URL=postgres://whoknows:whoknows@localhost:5432/whoknows?sslmode=disable go test ./...
+  postgres:
+    image: postgres:18.7-alpine
+    environment:
+      POSTGRES_USER: whoknows
+      POSTGRES_PASSWORD: whoknows
+      POSTGRES_DB: whoknows
+    ports:
+      - "127.0.0.1:5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U whoknows"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
 
   nginx:
     image: nginx:latest

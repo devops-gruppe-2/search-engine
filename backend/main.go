@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/rand"
 	"database/sql"
-	_ "embed"
 	"fmt"
 	"log"
 	"net/http"
@@ -17,15 +16,13 @@ import (
 	"github.com/gin-contrib/sessions/cookie"
 	"github.com/gin-gonic/gin"
 	"golang.org/x/crypto/bcrypt"
-	_ "modernc.org/sqlite"
+	_ "modernc.org/sqlite" // kun til import fra den gamle SQLite-database (db.go)
 )
 
 //==============================================================================================================================================================================
 // GLOBAL VARIABLES AND OTHER DEFINITIONS
 //==============================================================================================================================================================================
 
-//go:embed schema.sqlite
-var schemaSQL string
 var db *sql.DB
 
 // Krav til nye passwords
@@ -76,7 +73,7 @@ func main() {
 
 	// Database startup
 	var err error
-	db, err = initDB("./app.db")
+	db, err = initDB(databaseURL())
 
 	if err != nil {
 		log.Fatalf("Failed to initialize database: %v", err)
@@ -86,6 +83,13 @@ func main() {
 			log.Printf("Failed to close database: %v", err)
 		}
 	}()
+
+	// Første opstart på serveren: kopiér brugere og sider fra den gamle SQLite-database
+	if os.Getenv("SQLITE_IMPORT") == "true" {
+		if err := importFromSQLite(context.Background(), db, sqliteImportPath); err != nil {
+			log.Fatalf("Failed to import from SQLite: %v", err)
+		}
+	}
 
 	fmt.Println("Database initialized successfully")
 
@@ -182,61 +186,9 @@ func getAndHead(routes gin.IRoutes, path string, handlers ...gin.HandlerFunc) {
 // DATABASE
 //==============================================================================================================================================================================
 
-func initDB(dbPath string) (*sql.DB, error) {
-
-	// busy_timeout: når en anden request skriver til databasen, venter vi op til 5 sekunder
-	// på låsen i stedet for at fejle med det samme ("database is locked")
-	dsn := dbPath + "?_pragma=foreign_keys(1)&_pragma=busy_timeout(5000)"
-	db, err := sql.Open("sqlite", dsn)
-	if err != nil {
-		return nil, fmt.Errorf("failed to open database: %w", err)
-	}
-
-	// Opstarten har ingen request, så vi bruger en baggrunds-context
-	ctx := context.Background()
-
-	if err := db.PingContext(ctx); err != nil {
-		return nil, fmt.Errorf("failed to connect to database: %w", err)
-	}
-
-	statements := strings.Split(schemaSQL, ";")
-	for _, stmt := range statements {
-		stmt = strings.TrimSpace(stmt)
-		if stmt == "" {
-			continue
-		}
-
-		if _, err := db.ExecContext(ctx, stmt); err != nil {
-			return nil, fmt.Errorf("failed to execute statement: %w", err)
-		}
-	}
-
-	if err := migrateUsers(ctx, db); err != nil {
-		return nil, fmt.Errorf("failed to migrate users: %w", err)
-	}
-
-	if err := migrateSearchIndex(ctx, db); err != nil {
-		return nil, fmt.Errorf("failed to create search index: %w", err)
-	}
-
-	return db, nil
-}
-
 // migrateUsers gør en database fra før bcrypt klar. Den er sikker at køre ved hver opstart,
 // fordi den kun rører brugere der stadig har et password i klartekst.
 func migrateUsers(ctx context.Context, db *sql.DB) error {
-	var columns int
-	query := "SELECT COUNT(*) FROM pragma_table_info('users') WHERE name = 'must_change_password'"
-	if err := db.QueryRowContext(ctx, query).Scan(&columns); err != nil {
-		return err
-	}
-	if columns == 0 {
-		alter := "ALTER TABLE users ADD COLUMN must_change_password INTEGER NOT NULL DEFAULT 0"
-		if _, err := db.ExecContext(ctx, alter); err != nil {
-			return err
-		}
-	}
-
 	// bcrypt-hashes starter altid med $2, så alt andet er klartekst
 	rows, err := db.QueryContext(ctx, "SELECT id, password FROM users WHERE password NOT LIKE '$2%'")
 	if err != nil {
@@ -261,7 +213,7 @@ func migrateUsers(ctx context.Context, db *sql.DB) error {
 	}
 
 	// Klartekst-passwords må anses som stjålet (Security Breach), så brugerne skal også vælge et nyt
-	update := "UPDATE users SET password = ?, must_change_password = 1 WHERE id = ?"
+	update := "UPDATE users SET password = $1, must_change_password = TRUE WHERE id = $2"
 	for _, user := range users {
 		hash, err := hashPassword(user.password)
 		if err != nil {
@@ -460,7 +412,7 @@ func registerUser(c *gin.Context) {
 		return
 	}
 
-	query := "INSERT INTO users (username, email, password) VALUES (?, ?, ?)"
+	query := "INSERT INTO users (username, email, password) VALUES ($1, $2, $3)"
 	if _, err := db.ExecContext(c.Request.Context(), query, username, email, hash); err != nil {
 		log.Printf("Register insert failed: %v", err)
 		registrationsTotal.WithLabelValues("error").Inc()
@@ -517,7 +469,7 @@ func validateRegistration(ctx context.Context, username, email, password, passwo
 	}
 
 	if username != "" {
-		taken, err := exists(ctx, "SELECT COUNT(*) FROM users WHERE username = ?", username)
+		taken, err := exists(ctx, "SELECT COUNT(*) FROM users WHERE username = $1", username)
 		if err != nil {
 			return nil, err
 		}
@@ -526,7 +478,7 @@ func validateRegistration(ctx context.Context, username, email, password, passwo
 		}
 	}
 	if email != "" {
-		taken, err := exists(ctx, "SELECT COUNT(*) FROM users WHERE email = ?", email)
+		taken, err := exists(ctx, "SELECT COUNT(*) FROM users WHERE email = $1", email)
 		if err != nil {
 			return nil, err
 		}
@@ -581,7 +533,7 @@ func loginUser(c *gin.Context) {
 	var storedHash string
 	var mustChange bool
 	//Vi laver query her, som betyder: find hashet for denne bruger, hvis brugernavnet passer
-	query := "SELECT password, must_change_password FROM users WHERE username =?"
+	query := "SELECT password, must_change_password FROM users WHERE username = $1"
 	err := db.QueryRowContext(c.Request.Context(), query, username).Scan(&storedHash, &mustChange)
 
 	//Hvis der skulle opstå en fejl under databaseopslaget
@@ -672,7 +624,7 @@ func changePassword(c *gin.Context) {
 
 	// Det gamle password må anses som stjålet, så det må ikke bruges igen
 	var storedHash string
-	query := "SELECT password FROM users WHERE username = ?"
+	query := "SELECT password FROM users WHERE username = $1"
 	if err := db.QueryRowContext(c.Request.Context(), query, username).Scan(&storedHash); err != nil {
 		changeFailed(http.StatusInternalServerError, "Failed to change password")
 		return
@@ -688,7 +640,7 @@ func changePassword(c *gin.Context) {
 		return
 	}
 
-	update := "UPDATE users SET password = ?, must_change_password = 0 WHERE username = ?"
+	update := "UPDATE users SET password = $1, must_change_password = FALSE WHERE username = $2"
 	if _, err := db.ExecContext(c.Request.Context(), update, hash, username); err != nil {
 		changeFailed(http.StatusInternalServerError, "Failed to change password")
 		return
