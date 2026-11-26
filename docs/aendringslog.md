@@ -6,6 +6,24 @@ Hver ændring i koden laves på en branch og merges til `main` via en pull reque
 
 ---
 
+## 2026-11-26 · Offentligt monitoring-dashboard (PR #82)
+
+**Hvad var galt**
+- Prometheus på serveren sendte ingen tal til Grafana Cloud. Tokenen lå ikke på serveren, da containeren blev startet, så Docker lavede en tom **mappe** med navnet `grafana-cloud-token`. Bagefter brugte vi en token, der kun havde **read**-rettighed (`401 invalid scope requested`).
+- Antal-tallene på dashboardet (fx "Brugere i alt") stod med rød, fordi Grafanas standard er rød over 80.
+
+**Hvad er gjort**
+- På serveren: mappen er erstattet af en fil med en token fra policyen med `metrics:write`, og containeren er lavet på ny (`docker compose up -d --force-recreate prometheus`). Fundet med `docker logs whoknows-prometheus`.
+- `monitoring/grafana/dashboards/whoknows.json`: antal-tallene har én fast farve. Kun "Søgninger uden resultat" har grøn, orange og rød.
+- Dashboardet er importeret i Grafana Cloud og delt offentligt, så det kan ses uden login: https://dreamycaravan440.grafana.net/public-dashboards/37e50f266f314afa9bb21bf85f9115dc
+- Den offentlige kopi i Grafana Cloud bruger datakilden direkte i stedet for variablen, fordi offentlige dashboards ikke understøtter variabler.
+- Linket er sendt til underviseren i `repositories.py` (opgaven *Monitoring PR*, PR #51 i underviserens repo).
+
+**Første tal fra serveren**
+- 3.325 brugere, ca. 400 aktive i dag, og 491 af 1.921 søgninger (ca. 26 %) uden resultat.
+
+---
+
 ## 2026-11-24 · Monitoring på serveren med Grafana Cloud (PR #81)
 
 **Hvad var galt**

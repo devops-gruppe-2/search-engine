@@ -199,6 +199,8 @@ docker compose --profile monitoring up --build
 
 **På serveren** kører Prometheus i agent-mode (`monitoring/prometheus.agent.yml`). Den henter tallene fra appen og sender dem til **Grafana Cloud**, hvor dashboardet ligger. Så kører monitoring ikke på samme server som appen. API-tokenen ligger kun på serveren i `/opt/whoknows/secrets/grafana-cloud-token`.
 
+Dashboardet kan ses uden login: https://dreamycaravan440.grafana.net/public-dashboards/37e50f266f314afa9bb21bf85f9115dc
+
 ---
 
 ## 🌦️ Vejr
