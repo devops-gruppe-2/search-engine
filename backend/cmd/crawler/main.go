@@ -9,10 +9,11 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
 	"time"
 
-	_ "modernc.org/sqlite"
+	_ "github.com/jackc/pgx/v5/stdlib"
 )
 
 //==============================================================================================================================================================================
@@ -22,7 +23,10 @@ import (
 // så søgningen har noget indhold at finde.
 //
 // Kør fra backend-mappen:
-//   go run ./cmd/crawler -db ./app.db -limit 200
+//   go run ./cmd/crawler -limit 200
+//
+// Den skriver til PostgreSQL (DATABASE_URL). Tabellen pages laves af appens migreringer,
+// så appen skal have kørt én gang først.
 //==============================================================================================================================================================================
 
 // Wikipedia beder om en User-Agent, der fortæller hvem der crawler
@@ -61,18 +65,21 @@ type page struct {
 }
 
 func main() {
-	dbPath := flag.String("db", "./app.db", "sti til SQLite-databasen")
+	dbURL := flag.String("db", os.Getenv("DATABASE_URL"), "PostgreSQL-forbindelse (standard: DATABASE_URL)")
 	lang := flag.String("lang", "en", "Wikipedia-sprog (en eller da)")
 	categories := flag.String("categories", "Category:Programming languages,Category:Computer programming", "kategorier adskilt af komma")
 	limit := flag.Int("limit", 200, "maks antal artikler der hentes")
 	delay := flag.Duration("delay", 200*time.Millisecond, "pause mellem kald, så vi ikke belaster Wikipedia")
 	flag.Parse()
 
+	if *dbURL == "" {
+		log.Fatal("Angiv databasen med -db eller DATABASE_URL")
+	}
 	if *lang != "en" && *lang != "da" {
 		log.Fatalf("lang skal være en eller da, fik %q", *lang)
 	}
 
-	db, err := sql.Open("sqlite", *dbPath+"?_pragma=busy_timeout(5000)")
+	db, err := sql.Open("pgx", *dbURL)
 	if err != nil {
 		log.Fatalf("Kunne ikke åbne databasen: %v", err)
 	}
@@ -84,8 +91,8 @@ func main() {
 
 	ctx := context.Background()
 
-	if err := ensurePagesTable(ctx, db); err != nil {
-		log.Fatalf("Kunne ikke oprette pages-tabellen: %v", err)
+	if err := db.PingContext(ctx); err != nil {
+		log.Fatalf("Kunne ikke forbinde til databasen: %v", err)
 	}
 
 	client := &http.Client{Timeout: 30 * time.Second}
@@ -133,7 +140,7 @@ func main() {
 		time.Sleep(*delay)
 	}
 
-	log.Printf("Færdig: %d af %d artikler gemt i %s", saved, len(titles), *dbPath)
+	log.Printf("Færdig: %d af %d artikler gemt i databasen", saved, len(titles))
 }
 
 //==============================================================================================================================================================================
@@ -239,23 +246,11 @@ func getJSON(ctx context.Context, client *http.Client, requestURL string, target
 // DATABASE
 //==============================================================================================================================================================================
 
-// ensurePagesTable opretter tabellen med samme skema som schema.sqlite, hvis den mangler
-func ensurePagesTable(ctx context.Context, db *sql.DB) error {
-	_, err := db.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS pages (
-		title TEXT PRIMARY KEY UNIQUE,
-		url TEXT NOT NULL UNIQUE,
-		language TEXT NOT NULL CHECK(language IN ('en', 'da')) DEFAULT 'en',
-		last_updated TIMESTAMP,
-		content TEXT NOT NULL
-	)`)
-	return err
-}
-
 // savePage indsætter artiklen, eller opdaterer den hvis den allerede er crawlet før
 func savePage(ctx context.Context, db *sql.DB, p page) error {
 	_, err := db.ExecContext(ctx, `INSERT INTO pages (title, url, language, last_updated, content)
-		VALUES (?, ?, ?, ?, ?)
-		ON CONFLICT(title) DO UPDATE SET
+		VALUES ($1, $2, $3, NULLIF($4, '')::timestamptz, $5)
+		ON CONFLICT (title) DO UPDATE SET
 			url = excluded.url,
 			language = excluded.language,
 			last_updated = excluded.last_updated,
