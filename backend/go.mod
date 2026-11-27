@@ -3,13 +3,13 @@ module github.com/devops-gruppe-2/search-engine/backend
 go 1.27.0
 
 require (
-	github.com/gin-contrib/sessions v1.1.3
+	github.com/gin-contrib/sessions v1.1.4
 	github.com/gin-gonic/gin v1.12.0
 	github.com/jackc/pgx/v5 v5.13.0
 	github.com/pressly/goose/v3 v3.30.2
 	github.com/prometheus/client_golang v1.25.0
-	golang.org/x/crypto v0.58.0
-	modernc.org/sqlite v1.62.0
+	golang.org/x/crypto v0.59.0
+	modernc.org/sqlite v1.63.0
 )
 
 require (
