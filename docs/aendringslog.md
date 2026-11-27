@@ -6,6 +6,36 @@ Hver ændring i koden laves på en branch og merges til `main` via en pull reque
 
 ---
 
+## 2026-11-27 · Søgning med de fleste ord, og crawling ud fra søge-loggen (PR #84)
+
+**Hvad viste monitoring**
+- Søge-loggen og Grafana viste, at **ca. 26 %** af søgningerne gav 0 resultater med SQLite FTS5. De fleste var spørgsmål som *"what is the best programming language for quantum computing?"*.
+- Vi testede på siden: `quantum computing` gav 10 resultater, men hele spørgsmålet gav 0. Siderne fandtes altså. Problemet var, at søgningen krævede, at **alle** ord stod på siden, også "what", "is", "the" og "best".
+- Efter skiftet til PostgreSQL (PR #83) faldt tallet til **ca. 16 %** (64 af 401 søgninger på 12 timer), fordi PostgreSQL's ordbog fjerner småord. Ordet "best" og lignende ord skulle dog stadig stå på siden.
+
+**Hvad er ændret**
+- `backend/search.go`: søgningen finder sider med **mindst ét** af ordene (`a | b`) i stedet for alle (`a & b`). Sider med **alle** ordene står først, og derefter sorteres efter `ts_rank`, så sider med flere af ordene og ord i titlen kommer højere.
+- `backend/cmd/crawler`: nyt flag `-from-log`. Crawleren læser søge-loggen, finder de mest søgte søgninger uden resultater (`-top`, standard 30) og henter de artikler, **Wikipedias egen søgning** finder for hver af dem (`-per-query`, standard 5). Det er opgaven *Let them search*: logning viser, hvad brugerne søger efter, og det bestemmer, hvad der crawles.
+
+**Hvorfor**
+- Brugerne skriver hele spørgsmål, ikke enkelte nøgleord. En søgemaskine skal vise det bedste, den har, også når ikke alle ord passer.
+- Crawling ud fra loggen henter det, brugerne faktisk savner, i stedet for at gætte på kategorier.
+
+**Tests**
+- `TestSearchShowsPagesWithAllWordsFirst`, `TestSearchFindsPagesThatDoNotHaveEveryWord` (spørgsmålet fra loggen), `TestSearchRanksPagesWithMoreOfTheWordsHigher` og `TestSearchWithOnlyStopWordsReturnsNothing`.
+- `backend/cmd/crawler`: `TestMissingQueriesFromTheSearchLog` og `TestSearchWikipedia` (mod en falsk Wikipedia).
+
+**Efter merge (på serveren)**
+```bash
+/opt/whoknows/backup-db.sh
+docker exec whoknows-backend ./crawler -from-log logs/searches.log -top 30 -per-query 5
+```
+
+**Se at det virker**
+- Grafana → *Andel uden resultat over tid* skal falde efter deployet, og igen efter crawlingen.
+
+---
+
 ## 2026-11-27 · Debian-sikkerhedsrettelser i backend-imaget (PR #85)
 
 **Hvad var galt**
