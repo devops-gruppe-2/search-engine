@@ -13,6 +13,10 @@ RUN go build -o backend . && go build -o searchstats ./cmd/searchstats && go bui
 
 FROM debian:bookworm-slim
 
+# Henter sikkerhedsrettelser fra Debian, som endnu ikke er med i debian:bookworm-slim-imaget
+# (samme idé som apk upgrade i nginx/Dockerfile)
+RUN apt-get update && apt-get upgrade -y --no-install-recommends && rm -rf /var/lib/apt/lists/*
+
 WORKDIR /app
 
 COPY --from=builder /app/backend /app/searchstats /app/crawler ./
