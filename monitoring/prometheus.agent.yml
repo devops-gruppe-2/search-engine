@@ -1,0 +1,23 @@
+# Prometheus på serveren i agent-mode (bruges af compose.prod.yml).
+# Den henter tallene fra appens /metrics ligesom lokalt (monitoring/prometheus.yml),
+# men gemmer dem ikke selv. Den sender dem videre til Grafana Cloud (remote_write),
+# hvor dashboardet ligger. Så kører monitoring ikke på samme server som appen,
+# og den kan stadig ses, hvis dropletten går ned.
+global:
+  scrape_interval: 15s
+  external_labels:
+    env: production
+
+scrape_configs:
+  - job_name: 'whoknows-app'
+    metrics_path: /metrics
+    static_configs:
+      - targets: ['backend:8080']
+
+remote_write:
+  - url: https://prometheus-prod-72-prod-eu-west-4.grafana.net/api/prom/push
+    basic_auth:
+      # Instance ID i Grafana Cloud (ikke hemmeligt)
+      username: '3799470'
+      # API-tokenen ligger kun på serveren i /opt/whoknows/secrets og aldrig i Git
+      password_file: /etc/prometheus/grafana-cloud-token

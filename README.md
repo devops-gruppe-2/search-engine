@@ -19,15 +19,16 @@ Alle ændringer er beskrevet i **[ændringsloggen](docs/aendringslog.md)**. For 
                      │
                      ▼  (merge, når alt er grønt)
                    main  ──► CD: byg Docker-images ──► SSH ──►  docker compose
-                                                                  ├─ Nginx  (port 80/443, HTTPS)
-                                                                  └─ Go-app (port 8080, kun intern)
-                                                                        └─ SQLite: app.db
+                                                                  ├─ Nginx      (port 80/443, HTTPS)
+                                                                  ├─ Go-app     (port 8080, kun intern)
+                                                                  ├─ PostgreSQL (ingen åbne porte)
+                                                                  └─ Prometheus (sender til Grafana Cloud)
 ```
 
 | Del | Teknologi |
 |---|---|
 | Backend | Go med Gin |
-| Database | SQLite, søgning med FTS5 |
+| Database | PostgreSQL, søgning med `tsvector` og GIN-index, migreringer med goose |
 | Frontend | HTML-templates og CSS fra backend |
 | Webserver | Nginx (HTTPS og sikkerheds-headers) |
 | Container | Docker og Docker Compose |
@@ -82,11 +83,12 @@ go run .
 
 Alle tests kører automatisk i CI ved hver pull request.
 
-Kør Go-testene (hver test får sin egen midlertidige database):
+Go-testene kører mod en rigtig PostgreSQL. Hver test får sit eget schema, som slettes bagefter. Start databasen og kør testene:
 
 ```bash
+docker compose up -d postgres
 cd backend
-go test ./...
+TEST_DATABASE_URL="postgres://whoknows:whoknows@localhost:5432/whoknows?sslmode=disable" go test ./...
 ```
 
 Kør E2E-testene mod appen i Docker:
@@ -144,16 +146,18 @@ docker run --rm -v /var/run/docker.sock:/var/run/docker.sock aquasec/trivy:0.69.
 
 ## 🔎 Søgning
 
-Søgningen bruger SQLite **FTS5** (full text search) i stedet for `LIKE`:
-- Resultaterne sorteres efter relevans, og et ord i titlen tæller mere end et ord i teksten.
-- "languages" finder også "language".
-- Den er ca. 47 gange hurtigere end `LIKE` på 5.000 sider.
+Søgningen bruger PostgreSQL's fuldtekstsøgning i stedet for `LIKE`:
+- Kolonnen `search_vector` (`tsvector`) udregnes af PostgreSQL, hver gang en side gemmes eller ændres. Et **GIN-index** gør, at søgningen ikke skal læse alle sider.
+- Den finder sider med mindst ét af ordene. Sider med alle ordene kommer først, og derefter sorteres efter relevans (`ts_rank`), hvor et ord i titlen tæller 10 gange mere end et ord i teksten.
+- "languages" finder også "language", og småord som "the" og "is" ignoreres. Danske sider bruger den danske ordbog.
+
+Tabellerne og indexet laves af migreringerne i `backend/migrations/` (goose), når appen starter.
 
 Koden ligger i `backend/search.go`. Sammenlign selv hastigheden:
 
 ```bash
 cd backend
-go test -bench Search -run '^$'
+TEST_DATABASE_URL="postgres://whoknows:whoknows@localhost:5432/whoknows?sslmode=disable" go test -bench Search -run '^$'
 ```
 
 ---
@@ -174,6 +178,35 @@ go run ./cmd/searchstats -file logs/searches.log
 
 ---
 
+## 📈 Monitoring (Prometheus og Grafana)
+
+Appen tæller, hvordan brugerne bruger produktet, og viser tallene på `/metrics`. Prometheus henter dem hvert 15. sekund, og Grafana viser dem på dashboardet **"Who Knows – brugerne"**:
+
+| Spørgsmål | Måling |
+|---|---|
+| Finder brugerne det, de søger efter? | `whoknows_searches_total{results="found"/"none"}` |
+| Kan brugerne logge ind og oprette sig? | `whoknows_logins_total`, `whoknows_registrations_total` |
+| Hvor mange brugere har vi, og hvor mange er aktive i dag? | `whoknows_users_total`, `whoknows_active_users_today` |
+| Hvor længe venter brugerne? | `whoknows_request_duration_milliseconds` |
+
+Kør det lokalt:
+
+```bash
+docker compose --profile monitoring up --build
+```
+
+- Appen: http://localhost:8080
+- Prometheus: http://localhost:9090
+- Grafana: http://localhost:3000 (admin / admin)
+
+`/metrics` kan ikke ses udefra. Nginx svarer `404`, og Prometheus henter tallene direkte fra appen i Docker-netværket.
+
+**På serveren** kører Prometheus i agent-mode (`monitoring/prometheus.agent.yml`). Den henter tallene fra appen og sender dem til **Grafana Cloud**, hvor dashboardet ligger. Så kører monitoring ikke på samme server som appen. API-tokenen ligger kun på serveren i `/opt/whoknows/secrets/grafana-cloud-token`.
+
+Dashboardet kan ses uden login: https://dreamycaravan440.grafana.net/public-dashboards/37e50f266f314afa9bb21bf85f9115dc
+
+---
+
 ## 🌦️ Vejr
 
 `/weather` viser vejrudsigten for København de næste 7 dage, og `/api/weather` giver de samme data som JSON.
@@ -188,22 +221,24 @@ Søgemaskinen skal have noget at søge i. Crawleren henter Wikipedia-artikler fr
 
 ```bash
 cd backend
-go run ./cmd/crawler -db ./app.db -limit 200
+DATABASE_URL="postgres://whoknows:whoknows@localhost:5432/whoknows?sslmode=disable" go run ./cmd/crawler -limit 200
 ```
 
 | Flag | Standard | Betydning |
 |---|---|---|
-| `-db` | `./app.db` | Stien til databasen |
+| `-db` | `DATABASE_URL` | Forbindelsen til PostgreSQL |
 | `-lang` | `en` | Wikipedia-sprog (`en` eller `da`) |
 | `-categories` | `Category:Programming languages,Category:Computer programming` | Kategorier adskilt med komma |
 | `-limit` | `200` | Højst så mange artikler |
 | `-delay` | `200ms` | Pause mellem kald |
 
-På serveren ligger crawleren i `/opt/whoknows/crawler`. Tag en backup først:
+**Crawl det, brugerne ikke finder:** med `-from-log` læser crawleren søge-loggen, finder de mest søgte søgninger uden resultater og henter de artikler, Wikipedias egen søgning finder for dem (`-top` søgninger, `-per-query` artikler pr. søgning).
+
+På serveren ligger crawleren i app-containeren, som kender `DATABASE_URL`. Tag en backup først:
 
 ```bash
 /opt/whoknows/backup-db.sh
-cd /opt/whoknows && ./crawler -db /opt/whoknows/app.db -limit 800
+docker exec whoknows-backend ./crawler -from-log logs/searches.log -top 30 -per-query 5
 ```
 
 ---
@@ -221,11 +256,11 @@ Alt ligger i `/opt/whoknows`:
 | Fil eller mappe | Hvad |
 |---|---|
 | `compose.prod.yml` | Kopieres hertil af CD og starter appen og Nginx |
-| `.env` | `SESSION_KEY` (kun læsbar for `deploy`) |
-| `app.db` | Databasen |
+| `.env` | `SESSION_KEY` og `POSTGRES_PASSWORD` (kun læsbar for `deploy`) |
+| `app.db` | Den gamle SQLite-database. Bruges kun til den første import til PostgreSQL |
 | `logs/searches.log` | Logning af søgninger |
 | `db-backups/` | Daglige backups |
-| `backup-db.sh` | Backup-scriptet |
+| `backup-db.sh` | Backup-scriptet (kopi af `scripts/backup-db.sh`) |
 | `renew-cert.sh` | Fornyer HTTPS-certifikatet |
 
 Nyttige kommandoer:
@@ -234,12 +269,12 @@ Nyttige kommandoer:
 cd /opt/whoknows
 docker compose -f compose.prod.yml ps
 docker compose -f compose.prod.yml logs -f backend
-sqlite3 app.db ".tables"
+docker exec -it whoknows-postgres psql -U whoknows -c "\dt"
 sudo ufw status verbose
 ```
 
 **Automatiske job (cron):**
-- **02:00:** Backup af databasen til `db-backups/`. Backups ældre end 14 dage slettes. Loggen ligger i `backup.log`.
+- **02:00:** Backup af databasen med `pg_dump` til `db-backups/`. Backups ældre end 14 dage slettes. Loggen ligger i `backup.log`.
 - **03:30:** certbot tjekker certifikatet og fornyer det, når der er under 30 dage tilbage.
 
 ---

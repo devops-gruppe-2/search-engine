@@ -1,0 +1,12 @@
+# Grafana får Prometheus som datakilde automatisk, så man ikke skal klikke
+# "Add data source" i hånden (trin 1-4 i Anders' Grafana-tutorial).
+apiVersion: 1
+
+datasources:
+  - name: Prometheus
+    uid: prometheus
+    type: prometheus
+    access: proxy
+    # "prometheus" er navnet på servicen i compose-filen
+    url: http://prometheus:9090
+    isDefault: true

@@ -1,28 +1,39 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"database/sql"
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"net/url"
+	"os"
+	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
-	_ "modernc.org/sqlite"
+	_ "github.com/jackc/pgx/v5/stdlib"
 )
 
 //==============================================================================================================================================================================
 // CRAWLER
 //
-// Henter Wikipedia-artikler fra en eller flere kategorier og gemmer dem i pages-tabellen,
-// så søgningen har noget indhold at finde.
+// Henter Wikipedia-artikler og gemmer dem i pages-tabellen, så søgningen har noget at finde.
 //
-// Kør fra backend-mappen:
-//   go run ./cmd/crawler -db ./app.db -limit 200
+// To måder at vælge artikler på:
+//   - Kategorier (standard):  go run ./cmd/crawler -limit 200
+//   - Fra søge-loggen ("Let them search"): finder de mest søgte søgninger, der ikke gav
+//     resultater, og henter de artikler, Wikipedias egen søgning finder for dem:
+//       go run ./cmd/crawler -from-log logs/searches.log -top 30 -per-query 5
+//     På serveren: docker exec whoknows-backend ./crawler -from-log logs/searches.log
+//
+// Den skriver til PostgreSQL (DATABASE_URL). Tabellen pages laves af appens migreringer,
+// så appen skal have kørt én gang først.
 //==============================================================================================================================================================================
 
 // Wikipedia beder om en User-Agent, der fortæller hvem der crawler
@@ -61,18 +72,28 @@ type page struct {
 }
 
 func main() {
-	dbPath := flag.String("db", "./app.db", "sti til SQLite-databasen")
+	// Standarden er tom og ikke DATABASE_URL, så password'et aldrig bliver vist i hjælpeteksten
+	dbURL := flag.String("db", "", "PostgreSQL-forbindelse (bruger DATABASE_URL, hvis den ikke er angivet)")
 	lang := flag.String("lang", "en", "Wikipedia-sprog (en eller da)")
 	categories := flag.String("categories", "Category:Programming languages,Category:Computer programming", "kategorier adskilt af komma")
 	limit := flag.Int("limit", 200, "maks antal artikler der hentes")
 	delay := flag.Duration("delay", 200*time.Millisecond, "pause mellem kald, så vi ikke belaster Wikipedia")
+	fromLog := flag.String("from-log", "", "søge-loggen; henter artikler til søgninger uden resultater i stedet for kategorier")
+	top := flag.Int("top", 30, "med -from-log: hvor mange af de mest søgte søgninger uden resultater")
+	perQuery := flag.Int("per-query", 5, "med -from-log: hvor mange artikler pr. søgning")
 	flag.Parse()
 
+	if *dbURL == "" {
+		*dbURL = os.Getenv("DATABASE_URL")
+	}
+	if *dbURL == "" {
+		log.Fatal("Angiv databasen med -db eller DATABASE_URL")
+	}
 	if *lang != "en" && *lang != "da" {
 		log.Fatalf("lang skal være en eller da, fik %q", *lang)
 	}
 
-	db, err := sql.Open("sqlite", *dbPath+"?_pragma=busy_timeout(5000)")
+	db, err := sql.Open("pgx", *dbURL)
 	if err != nil {
 		log.Fatalf("Kunne ikke åbne databasen: %v", err)
 	}
@@ -84,17 +105,48 @@ func main() {
 
 	ctx := context.Background()
 
-	if err := ensurePagesTable(ctx, db); err != nil {
-		log.Fatalf("Kunne ikke oprette pages-tabellen: %v", err)
+	if err := db.PingContext(ctx); err != nil {
+		log.Fatalf("Kunne ikke forbinde til databasen: %v", err)
 	}
 
 	client := &http.Client{Timeout: 30 * time.Second}
 	apiURL := fmt.Sprintf("https://%s.wikipedia.org/w/api.php", *lang)
 
-	// Find artikeltitler i kategorierne
 	titles := []string{}
 	seen := map[string]bool{}
+	addTitles := func(found []string) {
+		for _, title := range found {
+			if !seen[title] && len(titles) < *limit {
+				seen[title] = true
+				titles = append(titles, title)
+			}
+		}
+	}
+
+	// Fra søge-loggen: find artikler til det, brugerne ikke fandt
+	if *fromLog != "" {
+		queries, err := missingQueriesFromFile(*fromLog, *lang, *top)
+		if err != nil {
+			log.Fatalf("Kunne ikke læse søge-loggen: %v", err)
+		}
+		log.Printf("%d søgninger uden resultater i loggen", len(queries))
+		for _, q := range queries {
+			found, err := searchWikipedia(ctx, client, apiURL, q.Query, *perQuery)
+			if err != nil {
+				log.Printf("Wikipedia-søgning efter %q fejlede: %v", q.Query, err)
+				continue
+			}
+			log.Printf("%q (søgt %d gange): %v", q.Query, q.Times, found)
+			addTitles(found)
+			time.Sleep(*delay)
+		}
+	}
+
+	// Find artikeltitler i kategorierne
 	for _, category := range strings.Split(*categories, ",") {
+		if *fromLog != "" {
+			break
+		}
 		category = strings.TrimSpace(category)
 		if category == "" {
 			continue
@@ -104,12 +156,7 @@ func main() {
 			log.Printf("Kunne ikke hente kategorien %q: %v", category, err)
 			continue
 		}
-		for _, title := range found {
-			if !seen[title] {
-				seen[title] = true
-				titles = append(titles, title)
-			}
-		}
+		addTitles(found)
 		if len(titles) >= *limit {
 			break
 		}
@@ -133,7 +180,7 @@ func main() {
 		time.Sleep(*delay)
 	}
 
-	log.Printf("Færdig: %d af %d artikler gemt i %s", saved, len(titles), *dbPath)
+	log.Printf("Færdig: %d af %d artikler gemt i databasen", saved, len(titles))
 }
 
 //==============================================================================================================================================================================
@@ -177,6 +224,34 @@ func categoryMembers(ctx context.Context, client *http.Client, apiURL, category 
 		time.Sleep(delay)
 	}
 
+	return titles, nil
+}
+
+// searchWikipedia bruger Wikipedias egen søgning og giver titlerne på de bedste artikler
+func searchWikipedia(ctx context.Context, client *http.Client, apiURL, query string, limit int) ([]string, error) {
+	params := url.Values{
+		"action":        {"query"},
+		"format":        {"json"},
+		"formatversion": {"2"},
+		"list":          {"search"},
+		"srsearch":      {query},
+		"srnamespace":   {"0"},
+		"srlimit":       {fmt.Sprint(limit)},
+	}
+	var resp struct {
+		Query struct {
+			Search []struct {
+				Title string `json:"title"`
+			} `json:"search"`
+		} `json:"query"`
+	}
+	if err := getJSON(ctx, client, apiURL+"?"+params.Encode(), &resp); err != nil {
+		return nil, err
+	}
+	titles := []string{}
+	for _, result := range resp.Query.Search {
+		titles = append(titles, result.Title)
+	}
 	return titles, nil
 }
 
@@ -239,27 +314,73 @@ func getJSON(ctx context.Context, client *http.Client, requestURL string, target
 // DATABASE
 //==============================================================================================================================================================================
 
-// ensurePagesTable opretter tabellen med samme skema som schema.sqlite, hvis den mangler
-func ensurePagesTable(ctx context.Context, db *sql.DB) error {
-	_, err := db.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS pages (
-		title TEXT PRIMARY KEY UNIQUE,
-		url TEXT NOT NULL UNIQUE,
-		language TEXT NOT NULL CHECK(language IN ('en', 'da')) DEFAULT 'en',
-		last_updated TIMESTAMP,
-		content TEXT NOT NULL
-	)`)
-	return err
-}
-
 // savePage indsætter artiklen, eller opdaterer den hvis den allerede er crawlet før
 func savePage(ctx context.Context, db *sql.DB, p page) error {
 	_, err := db.ExecContext(ctx, `INSERT INTO pages (title, url, language, last_updated, content)
-		VALUES (?, ?, ?, ?, ?)
-		ON CONFLICT(title) DO UPDATE SET
+		VALUES ($1, $2, $3, NULLIF($4, '')::timestamptz, $5)
+		ON CONFLICT (title) DO UPDATE SET
 			url = excluded.url,
 			language = excluded.language,
 			last_updated = excluded.last_updated,
 			content = excluded.content`,
 		p.Title, p.URL, p.Language, p.LastUpdated, p.Content)
 	return err
+}
+
+//==============================================================================================================================================================================
+// SØGE-LOGGEN
+//==============================================================================================================================================================================
+
+// missingQuery er en søgning uden resultater, og hvor mange gange den er lavet
+type missingQuery struct {
+	Query string
+	Times int
+}
+
+func missingQueriesFromFile(path, language string, top int) ([]missingQuery, error) {
+	f, err := os.Open(filepath.Clean(path))
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = f.Close() }()
+	return missingQueries(f, language, top)
+}
+
+// missingQueries læser søge-loggen (én JSON-linje pr. søgning, se backend/searchlog.go)
+// og giver de mest søgte søgninger på sproget, som ikke gav resultater, de hyppigste først
+func missingQueries(r io.Reader, language string, top int) ([]missingQuery, error) {
+	counts := map[string]int{}
+	scanner := bufio.NewScanner(r)
+	for scanner.Scan() {
+		var entry struct {
+			Msg      string `json:"msg"`
+			Query    string `json:"query"`
+			Language string `json:"language"`
+			Results  int    `json:"results"`
+		}
+		if err := json.Unmarshal(scanner.Bytes(), &entry); err != nil || entry.Msg != "search" {
+			continue
+		}
+		if entry.Results == 0 && entry.Query != "" && entry.Language == language {
+			counts[entry.Query]++
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		return nil, err
+	}
+
+	list := make([]missingQuery, 0, len(counts))
+	for query, times := range counts {
+		list = append(list, missingQuery{query, times})
+	}
+	sort.Slice(list, func(i, j int) bool {
+		if list[i].Times != list[j].Times {
+			return list[i].Times > list[j].Times
+		}
+		return list[i].Query < list[j].Query
+	})
+	if len(list) > top {
+		list = list[:top]
+	}
+	return list, nil
 }

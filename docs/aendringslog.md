@@ -6,6 +6,256 @@ Hver ændring i koden laves på en branch og merges til `main` via en pull reque
 
 ---
 
+## 2026-11-27 · Tilgængelighed (PR #87)
+
+**Hvad var galt** (de regler, Lighthouse og WAVE bruger)
+| Problem | Hvor | Hvorfor er det et problem |
+|---|---|---|
+| Inputfelter uden label | Søgefeltet, login, register, skift password | En skærmlæser kan ikke sige, hvad feltet er til. "Username:" stod som tekst ved siden af feltet, ikke som en `<label>` |
+| For lav kontrast | Footeren (`#888` på `#eee`, 2,9:1) og "Updated …" under vejret (`#888` på hvid, 3,5:1) | WCAG AA kræver mindst 4,5:1. Svagsynede kan ikke læse teksten |
+| Ingen landmarks | Alle sider (kun `<div>`) | Skærmlæsere bruger `<header>`, `<main>` og `<footer>` til at hoppe direkte til indholdet |
+| Fejlbeskeder bliver ikke læst op | "Error: …" på login, register m.fl. | Uden `role="alert"` opdager en skærmlæser ikke, at der kom en fejl |
+| Ingen `autocomplete` | Login, register, skift password | Browsere og password-managere kan ikke udfylde felterne |
+
+**Hvad er ændret**
+- `header.html`: `<header>`, `<nav aria-label="Main">`, `<main>` og `<footer>` i stedet for `<div>`.
+- Alle felter har `<label for="…">`. Søgefeltet har en label, der kun læses op (`.visually-hidden`), så det ser ud som før.
+- Søgeformularen har `role="search"`, og søgefeltet er `type="search"`.
+- Login og register: `autocomplete` (`username`, `current-password`, `new-password`, `email`), `required` og `type="email"` på e-mail.
+- Fejlbeskeder har `role="alert"`.
+- Vejr-tabellen har en `<caption>` (kun til skærmlæsere) og `scope="col"` på overskrifterne.
+- `style.css`: grå tekst er `#555` (6,4:1 på `#eee` og 7,5:1 på hvid). Tydelig fokus-ramme, når man bruger tastaturet.
+- Alle id'er, som simulatoren og testene bruger (`search-input`, `login-button` osv.), er uændrede, og siderne ser ud som før.
+
+**Tests**
+- `backend/accessibility_test.go`: alle felter på søgesiden, login, register og skift password har en label. Siderne har `lang`, `<main>`, `<nav>`, `<header>` og `<footer>`. Fejlbeskeder har `role="alert"`.
+
+**Se at det virker**
+- I Edge eller Chrome: F12 → **Lighthouse** → *Accessibility* → *Analyze page load* på https://whoknows-gruppe2.dk.
+
+---
+
+## 2026-11-27 · Crawleren viser ikke længere databasens password (PR #86)
+
+**Hvad var galt**
+- Crawlerens flag `-db` havde `DATABASE_URL` som standardværdi. Når crawleren fik et ukendt flag, skrev den hjælpeteksten med alle standardværdier, og dermed hele `DATABASE_URL` med **databasens password** i terminalen.
+
+**Hvad er ændret**
+- `backend/cmd/crawler/main.go`: `-db` har en tom standardværdi. Er den tom, læses `DATABASE_URL` først bagefter, så password'et aldrig kommer med i hjælpeteksten.
+
+**Hvorfor**
+- Hemmeligheder må ikke kunne havne i terminal-output, logs eller skærmbilleder.
+
+**Efter merge**
+- Password'et har været vist, så det skiftes på serveren (`ALTER USER` i PostgreSQL og `POSTGRES_PASSWORD` i `.env`).
+
+**Se at det virker**
+- `DATABASE_URL=postgres://u:HEMMELIG@x/db go run ./cmd/crawler -nope` skriver ikke `HEMMELIG`.
+
+---
+
+## 2026-11-27 · Søgning med de fleste ord, og crawling ud fra søge-loggen (PR #84)
+
+**Hvad viste monitoring**
+- Søge-loggen og Grafana viste, at **ca. 26 %** af søgningerne gav 0 resultater med SQLite FTS5. De fleste var spørgsmål som *"what is the best programming language for quantum computing?"*.
+- Vi testede på siden: `quantum computing` gav 10 resultater, men hele spørgsmålet gav 0. Siderne fandtes altså. Problemet var, at søgningen krævede, at **alle** ord stod på siden, også "what", "is", "the" og "best".
+- Efter skiftet til PostgreSQL (PR #83) faldt tallet til **ca. 16 %** (64 af 401 søgninger på 12 timer), fordi PostgreSQL's ordbog fjerner småord. Ordet "best" og lignende ord skulle dog stadig stå på siden.
+
+**Hvad er ændret**
+- `backend/search.go`: søgningen finder sider med **mindst ét** af ordene (`a | b`) i stedet for alle (`a & b`). Sider med **alle** ordene står først, og derefter sorteres efter `ts_rank`, så sider med flere af ordene og ord i titlen kommer højere.
+- `backend/cmd/crawler`: nyt flag `-from-log`. Crawleren læser søge-loggen, finder de mest søgte søgninger uden resultater (`-top`, standard 30) og henter de artikler, **Wikipedias egen søgning** finder for hver af dem (`-per-query`, standard 5). Det er opgaven *Let them search*: logning viser, hvad brugerne søger efter, og det bestemmer, hvad der crawles.
+
+**Hvorfor**
+- Brugerne skriver hele spørgsmål, ikke enkelte nøgleord. En søgemaskine skal vise det bedste, den har, også når ikke alle ord passer.
+- Crawling ud fra loggen henter det, brugerne faktisk savner, i stedet for at gætte på kategorier.
+
+**Tests**
+- `TestSearchShowsPagesWithAllWordsFirst`, `TestSearchFindsPagesThatDoNotHaveEveryWord` (spørgsmålet fra loggen), `TestSearchRanksPagesWithMoreOfTheWordsHigher` og `TestSearchWithOnlyStopWordsReturnsNothing`.
+- `backend/cmd/crawler`: `TestMissingQueriesFromTheSearchLog` og `TestSearchWikipedia` (mod en falsk Wikipedia).
+
+**Efter merge (på serveren)**
+```bash
+/opt/whoknows/backup-db.sh
+docker exec whoknows-backend ./crawler -from-log logs/searches.log -top 30 -per-query 5
+```
+
+**Se at det virker**
+- Grafana → *Andel uden resultat over tid* skal falde efter deployet, og igen efter crawlingen.
+
+---
+
+## 2026-11-27 · Debian-sikkerhedsrettelser i backend-imaget (PR #85)
+
+**Hvad var galt**
+- Trivy stoppede alle pull requests: `debian:bookworm-slim`, som backend-imaget bygger på, havde **4 HIGH-sårbarheder** i `libpam` (bl.a. CVE-2025-6020). Rettelsen findes i Debian (`1.5.2-6+deb12u3`), men det officielle image var ikke genopbygget endnu.
+
+**Hvad er ændret**
+- `backend/Dockerfile`: `apt-get update && apt-get upgrade -y`, når imaget bygges, så vi får Debians rettelser med det samme. Det er samme løsning som `apk upgrade` i Nginx-imaget (PR #66).
+
+**Hvorfor**
+- Vi skal ikke vente på, at Debian-holdet genopbygger deres image, før en sikkerhedsrettelse kommer med.
+- Trivy og branch protection gjorde, at det blev opdaget, før et sårbart image kunne komme i produktion.
+
+---
+
+## 2026-11-26 · PostgreSQL i stedet for SQLite (PR #83, issue #68 og #69)
+
+**Hvad var galt**
+- SQLite er én fil, og kun én kan skrive ad gangen. Vi har allerede set `database is locked`, da mange registrerede sig samtidig, og simulatoren laver flere og flere brugere og søgninger.
+- Opgaven *Upgrade the Database*: SQLite holder ikke til skalering og ydelse, og valget skal diskuteres offentligt.
+
+**Valg** (diskuteret i GitHub Discussion #78)
+| Valg | Hvorfor |
+|---|---|
+| **PostgreSQL** frem for MySQL | Søgning er vores vigtigste funktion, og PostgreSQL har indbygget fuldtekstsøgning med stemming og rangering. Mange kan skrive samtidig. Open source og ikke ejet af en virksomhed. |
+| **Intet ORM**, driveren `pgx` med `database/sql` | Vi skriver allerede SQL, og vores forespørgsler er få. Søgeforespørgslen er lettere at styre i ren SQL. |
+| **goose** til migreringer | Tabellerne laves i versionerede SQL-filer (`backend/migrations/`), som køres ved opstart. goose husker i `goose_db_version`, hvad der er kørt. |
+| **På dropletten** frem for managed database | KPI'erne viste ca. 10 % CPU og 26 % RAM brugt. En managed database koster ca. $15 om måneden ekstra. PostgreSQL har `mem_limit: 512m` og ingen åbne porte. |
+
+**Hvad er ændret**
+- `backend/migrations/00001_create_tables.sql`: `users` og `pages` som før, men med `BOOLEAN`, `TIMESTAMPTZ` og `GENERATED BY DEFAULT AS IDENTITY`.
+- `backend/migrations/00002_search_index.sql` (**Indexing**): kolonnen `search_vector` (`tsvector`) udregnes af PostgreSQL selv (`GENERATED ... STORED`), så vi ikke længere har brug for triggers som med FTS5. Der er et **GIN-index** på den. Ord i titlen har vægt A og ord i teksten vægt B. Danske sider bruger den danske ordbog.
+- `backend/search.go`: `plainto_tsquery` og `ts_rank` i stedet for FTS5 `MATCH` og `bm25`. Titlen tæller 10 gange så meget som teksten, som før.
+- `backend/db.go` (ny): forbindelse via `DATABASE_URL`, venter på databasen ved opstart og kører migreringerne. Der står intet password i koden.
+- **Flytning af data:** første gang appen starter på serveren, kopieres brugere og sider fra den gamle `app.db` (mountet read-only), men kun hvis PostgreSQL ingen sider har. Admin fra SQLite overskriver standard-admin fra migreringen, så serverens rigtige password bliver bevaret.
+- Alle SQL-kald bruger `$1, $2` i stedet for `?`.
+- `backend/cmd/crawler`: skriver til PostgreSQL og ligger nu i app-imaget (`docker exec whoknows-backend ./crawler`).
+- `compose.yml`: PostgreSQL lokalt og i CI. `compose.prod.yml`: PostgreSQL på serveren med password fra `.env` og data i volumet `postgres-data`. Mangler `POSTGRES_PASSWORD`, stopper deployet, før noget bliver ændret.
+- `ci.yml`: test-jobbet har en PostgreSQL-service. Hver test får sit eget schema (`backend/testdb_test.go`).
+- `scripts/backup-db.sh` (ny): backup med `pg_dump` i stedet for at kopiere SQLite-filen.
+
+**Tests**
+- Alle eksisterende tests kører nu mod PostgreSQL (57 tests).
+- Nye: `TestSearchIgnoresStopWords`, `TestSearchInDanishUsesTheDanishDictionary`, `TestSearchCanUseTheGINIndex` (EXPLAIN viser `pages_search_vector_idx`), `TestImportFromSQLite` (brugere, sider, datoer, admin-password, og at importen ikke kører to gange) og `TestImportWithoutSQLiteFileDoesNothing`.
+- Kørt lokalt med en SQLite-fil som serverens (3.325 brugere og 417 sider): alt blev importeret, admin beholdt sit password, en genstart importerede ikke igen, og register, login, søgning og weather virker.
+
+**Før merge (på serveren, én gang)**
+```bash
+cd /opt/whoknows
+cp app.db db-backups/app-before-postgres.db
+echo "POSTGRES_PASSWORD=$(openssl rand -hex 24)" >> .env
+```
+
+**Efter merge**
+- `docker logs whoknows-backend | grep Imported` viser, hvor mange brugere og sider der blev kopieret.
+- Backup-scriptet skiftes ud: `cp` indholdet af `scripts/backup-db.sh` til `/opt/whoknows/backup-db.sh` og kør det én gang.
+
+**Fravalgt**
+- Søgningen kræver stadig, at alle ord står på siden (`plainto_tsquery`). At finde sider med de fleste ord er en separat ændring, så vi kan måle effekten i Grafana for sig.
+
+---
+
+## 2026-11-26 · Offentligt monitoring-dashboard (PR #82)
+
+**Hvad var galt**
+- Prometheus på serveren sendte ingen tal til Grafana Cloud. Tokenen lå ikke på serveren, da containeren blev startet, så Docker lavede en tom **mappe** med navnet `grafana-cloud-token`. Bagefter brugte vi en token, der kun havde **read**-rettighed (`401 invalid scope requested`).
+- Antal-tallene på dashboardet (fx "Brugere i alt") stod med rød, fordi Grafanas standard er rød over 80.
+
+**Hvad er gjort**
+- På serveren: mappen er erstattet af en fil med en token fra policyen med `metrics:write`, og containeren er lavet på ny (`docker compose up -d --force-recreate prometheus`). Fundet med `docker logs whoknows-prometheus`.
+- `monitoring/grafana/dashboards/whoknows.json`: antal-tallene har én fast farve. Kun "Søgninger uden resultat" har grøn, orange og rød.
+- Dashboardet er importeret i Grafana Cloud og delt offentligt, så det kan ses uden login: https://dreamycaravan440.grafana.net/public-dashboards/37e50f266f314afa9bb21bf85f9115dc
+- Den offentlige kopi i Grafana Cloud bruger datakilden direkte i stedet for variablen, fordi offentlige dashboards ikke understøtter variabler.
+- Linket er sendt til underviseren i `repositories.py` (opgaven *Monitoring PR*, PR #51 i underviserens repo).
+
+**Første tal fra serveren**
+- 3.325 brugere, ca. 400 aktive i dag, og 491 af 1.921 søgninger (ca. 26 %) uden resultat.
+
+---
+
+## 2026-11-24 · Monitoring på serveren med Grafana Cloud (PR #81)
+
+**Hvad var galt**
+- Monitoring (PR #79) kørte kun lokalt. Anders skal kunne se vores dashboard (opgaven *Monitoring PR*), og det skal vise rigtige tal fra serveren.
+- Anders anbefaler, at monitoring **ikke** kører på samme server som appen: går serveren ned, går monitoring også ned, og så kan man ikke se, hvad der skete.
+
+**Valg**
+| Mulighed | Valgt? | Hvorfor |
+|---|---|---|
+| Grafana Cloud (gratis) | ✅ | Dashboard og database ligger hos Grafana, ikke på dropletten. Gratis. |
+| Ny droplet kun til monitoring | ❌ | Ca. $6 + moms om måneden ekstra og mere at vedligeholde |
+| Prometheus og Grafana på samme droplet | ❌ | Imod Anders' anbefaling, og dropletten har kun 2 GB RAM |
+
+**Hvad er ændret**
+- `monitoring/prometheus.agent.yml` (ny): Prometheus i **agent-mode**. Den henter `/metrics` fra appen hvert 15. sekund, ligesom lokalt, og sender tallene til Grafana Cloud med `remote_write`. Den gemmer kun en lille buffer selv.
+- `compose.prod.yml`: ny service `prometheus` (`prom/prometheus:v3.15.1`) uden åbne porte og med `mem_limit: 256m`, så den ikke kan tage hukommelsen fra appen.
+- `.github/workflows/cd.yml`: kopierer også `monitoring/prometheus.agent.yml` til serveren.
+- `monitoring/grafana/dashboards/whoknows.json`: dashboardet bruger en datakilde-variabel, så den samme fil virker både lokalt og i Grafana Cloud.
+
+**Hemmeligheder**
+- API-tokenen til Grafana Cloud står kun på serveren i `/opt/whoknows/secrets/grafana-cloud-token` og aldrig i Git. Prometheus læser den med `password_file`.
+- Instance ID (`3799470`) og URL'en er ikke hemmelige og står i konfigurationen.
+
+**Før merge (på serveren, én gang)**
+```bash
+mkdir -p /opt/whoknows/secrets && chmod 700 /opt/whoknows/secrets
+nano /opt/whoknows/secrets/grafana-cloud-token   # indsæt tokenen
+chmod 644 /opt/whoknows/secrets/grafana-cloud-token
+chown -R deploy:deploy /opt/whoknows/secrets
+```
+Mappen er kun åben for `deploy`. Filen skal kunne læses af Prometheus i containeren, som ikke kører som `deploy`.
+
+**Se at det virker**
+- `docker logs whoknows-prometheus` viser ingen fejl om `remote_write`.
+- I Grafana Cloud: Explore → `whoknows_users_total` viser antal brugere fra serveren.
+
+---
+
+## 2026-11-23 · Monitoring med Prometheus og Grafana (PR #79)
+
+**Hvad var galt**
+- Vi havde kun health monitoring (Postman: er siden oppe?) og søge-loggen. Vi kunne ikke se over tid, hvordan brugerne bruger produktet.
+- Anders' krav til opgaven *Monitoring*: monitoring skal være **brugerfokuseret** ("monitoring is for asking questions"), ikke CPU og RAM, og vi skal kunne begrunde, hvorfor vi måler netop det.
+
+**Hvad vi måler, og hvorfor**
+| Spørgsmål om brugerne | Måling | Hvorfor |
+|---|---|---|
+| Finder brugerne det, de søger efter? | `whoknows_searches_total{source, results}` (`found`/`none`) | Søgning er produktets kerne. Søge-loggen viste, at 23 % ikke fandt noget, og nu kan vi se, om tallet falder, når vi forbedrer søgningen. |
+| Kan brugerne komme ind? | `whoknows_logins_total{result}` og `whoknows_registrations_total{result}` | Mange fejlede logins eller afviste registreringer betyder, at brugerne går i stå eller at nogen prøver at gætte passwords. |
+| Hvor mange bruger produktet? | `whoknows_users_total` og `whoknows_active_users_today` | Vokser vi? Hvor mange er aktive, og ikke bare oprettet? |
+| Hvor længe venter brugerne? | `whoknows_request_duration_milliseconds{route}` og `whoknows_http_responses_total{route, status}` | Langsomme sider og fejlsider (5xx) er det, brugeren mærker. |
+
+**Hvad er ændret**
+- `backend/metrics.go` (ny): tællerne med Prometheus' Go-bibliotek (`client_golang`), en middleware der måler hvert request, og `/metrics`. Opbygningen er som i Anders' eksempel (`whoknows_variations`, branch `monitoring`): Counter, Histogram og Gauge, `/metrics` og samme navne for svar og svartid.
+- `backend/main.go` og `backend/searchlog.go`: tællerne kaldes ved login, registrering og søgning.
+- Route-mønsteret bruges som label (fx `/api/search`), ikke den fulde URL, så hver søgning ikke bliver en ny tidsserie.
+- Aktive brugere tælles i hukommelsen pr. dag. Kun antallet vises, aldrig brugernavne.
+- `nginx/nginx.conf` og `nginx/nginx.prod.conf`: `/metrics` giver `404` udefra. Prometheus henter tallene direkte fra `backend:8080` i Docker-netværket.
+- `monitoring/prometheus.yml` (ny): Prometheus henter fra appen hvert 15. sekund (pull).
+- `monitoring/grafana/` (ny): Grafana får Prometheus som datakilde og dashboardet **"Who Knows – brugerne"** automatisk ved opstart. Dashboardet ligger i Git (`whoknows.json`).
+- `compose.yml`: Prometheus og Grafana i profilen `monitoring`, så CI og `docker compose up` kører som før.
+
+**Tests**
+- `backend/metrics_test.go`: `/metrics` viser målingerne, søgninger tælles som `found`/`none`, logins og registreringer tælles efter resultat, antal brugere, aktive brugere pr. dag og route-mønstre.
+- Kørt lokalt: `/metrics` giver `404` gennem Nginx, Prometheus' targets er `up`, og alle 10 forespørgsler i dashboardet virker.
+
+**Se at det virker (lokalt)**
+- `docker compose --profile monitoring up --build`
+- Søg og log ind på http://localhost:8080, og åbn Grafana på http://localhost:3000 (admin / admin) → Dashboards → Who Knows → **Who Knows – brugerne**.
+
+**Mangler**
+- Det kører kun lokalt. Serveren kom i PR #81 (Grafana Cloud).
+
+---
+
+## 2026-11-23 · Nginx 1.30.7 (sikkerhedsrettelse, PR #80)
+
+**Hvad var galt**
+- Trivy stoppede alle pull requests: `nginx:1.30.6-alpine` havde **6 kendte sårbarheder i selve Nginx** (4 CRITICAL, 2 HIGH), bl.a. en use-after-free i Nginx' worker-proces (CVE-2026-113425).
+- Rettelsen findes i Nginx 1.30.7. `apk upgrade` i vores Dockerfile hjælper ikke her, fordi Nginx-pakken kommer fra Nginx' eget image og ikke fra Alpine.
+
+**Hvad er ændret**
+- `nginx/Dockerfile`: `FROM nginx:1.30.6-alpine` → `FROM nginx:1.30.7-alpine`. Det er en patch-opdatering på stable-sporet, ligesom vores Dependabot-regel tillader.
+
+**Hvorfor**
+- Det er Nginx, der tager imod al trafik fra internettet, så en CRITICAL-sårbarhed dér skal rettes med det samme.
+- Trivy i CI og branch protection gjorde, at det blev opdaget, før en sårbar version kunne deployes igen.
+
+**Se at det virker**
+- Trivy på det nye image: 0 HIGH/CRITICAL.
+
+---
+
 ## 2026-11-16 · Logning af søgninger (PR #74, issue #70)
 
 **Hvad var galt**

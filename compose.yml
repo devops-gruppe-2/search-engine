@@ -2,6 +2,29 @@ services:
   backend:
     build:
       context: ./backend
+    environment:
+      DATABASE_URL: postgres://whoknows:whoknows@postgres:5432/whoknows?sslmode=disable
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # PostgreSQL lokalt og i CI. Lokalt er password bare "whoknows". På serveren er det
+  # et rigtigt password i /opt/whoknows/.env (se compose.prod.yml).
+  # Porten er åben på localhost, så Go-testene kan køre mod den:
+  #   TEST_DATABASE_URL=postgres://whoknows:whoknows@localhost:5432/whoknows?sslmode=disable go test ./...
+  postgres:
+    image: postgres:18.7-alpine
+    environment:
+      POSTGRES_USER: whoknows
+      POSTGRES_PASSWORD: whoknows
+      POSTGRES_DB: whoknows
+    ports:
+      - "127.0.0.1:5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U whoknows"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
 
   nginx:
     image: nginx:latest
@@ -12,3 +35,30 @@ services:
       - ./nginx/security-headers.conf:/etc/nginx/security-headers.conf:ro
     depends_on:
       - backend
+
+  # Monitoring, ligesom Anders' eksempel i whoknows_variations (branch monitoring).
+  # Starter kun med: docker compose --profile monitoring up --build
+  # Prometheus: http://localhost:9090   Grafana: http://localhost:3000
+  prometheus:
+    image: prom/prometheus:v3.15.1
+    profiles: [monitoring]
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    depends_on:
+      - backend
+
+  grafana:
+    image: grafana/grafana:13.2.6
+    profiles: [monitoring]
+    ports:
+      - "3000:3000"
+    environment:
+      # Lokalt er login admin / admin. På serveren sættes et rigtigt password i .env.
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+    volumes:
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    depends_on:
+      - prometheus

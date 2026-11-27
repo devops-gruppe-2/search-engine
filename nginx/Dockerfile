@@ -1,5 +1,5 @@
 # Nginx-image til serveren med konfigurationen bygget ind
-FROM nginx:1.30.6-alpine
+FROM nginx:1.30.7-alpine
 
 # Henter sikkerhedsrettelser fra Alpine, som endnu ikke er med i det officielle nginx-image
 RUN apk upgrade --no-cache

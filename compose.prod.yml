@@ -8,13 +8,45 @@ services:
     # Mangler den, laver appen en tilfældig nøgle ved hver opstart.
     environment:
       SESSION_KEY: ${SESSION_KEY:-}
+      # Password'et står i /opt/whoknows/.env (POSTGRES_PASSWORD) og ikke i Git.
+      # Uden det stopper deployet her, før noget bliver ændret.
+      DATABASE_URL: postgres://whoknows:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD skal være sat i .env}@postgres:5432/whoknows?sslmode=disable
+      # Første opstart med PostgreSQL: brugere og sider kopieres fra den gamle SQLite-fil
+      # (/app/app.db). Det sker kun, når PostgreSQL ingen sider har (importFromSQLite i backend/db.go).
+      SQLITE_IMPORT: "true"
     volumes:
-      - /opt/whoknows/app.db:/app/app.db
+      # Den gamle SQLite-database, kun til importen. Mountes read-only.
+      - /opt/whoknows/app.db:/app/app.db:ro
       # Søge-loggen (logs/searches.log) bliver bevaret, når containeren skiftes ud
       - /opt/whoknows/logs:/app/logs
     # Kun Nginx kan nå appen. Den er ikke åben direkte mod internettet.
     expose:
       - "8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # PostgreSQL (opgaven "Upgrade the Database"). Kører på samme droplet som appen, fordi
+  # vores KPI'er viste plads (ca. 10 % CPU og 26 % RAM), og en managed database koster
+  # ca. $15 om måneden ekstra. Ingen åbne porte: kun appen kan nå den.
+  postgres:
+    image: postgres:18.7-alpine
+    container_name: whoknows-postgres
+    environment:
+      POSTGRES_USER: whoknows
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD skal være sat i .env}
+      POSTGRES_DB: whoknows
+    volumes:
+      # Data ligger i et volume, så det bliver bevaret, når containeren skiftes ud
+      - postgres-data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U whoknows"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+    # Databasen må ikke tage al hukommelsen fra appen
+    mem_limit: 512m
     restart: unless-stopped
 
   nginx:
@@ -29,3 +61,27 @@ services:
     depends_on:
       - backend
     restart: unless-stopped
+
+  # Monitoring: Prometheus i agent-mode henter /metrics fra appen og sender tallene til
+  # Grafana Cloud, hvor dashboardet ligger (se monitoring/prometheus.agent.yml).
+  # Har ingen porte åbne og gemmer kun en lille buffer, indtil tallene er sendt.
+  prometheus:
+    image: prom/prometheus:v3.15.1
+    container_name: whoknows-prometheus
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --agent
+      - --storage.agent.path=/prometheus
+    volumes:
+      - /opt/whoknows/monitoring/prometheus.agent.yml:/etc/prometheus/prometheus.yml:ro
+      - /opt/whoknows/secrets/grafana-cloud-token:/etc/prometheus/grafana-cloud-token:ro
+      - prometheus-data:/prometheus
+    # Monitoring må ikke tage hukommelsen fra appen
+    mem_limit: 256m
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+volumes:
+  prometheus-data:
+  postgres-data:

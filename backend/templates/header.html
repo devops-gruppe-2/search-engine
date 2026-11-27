@@ -8,8 +8,8 @@
 </head>
 <body>
 <div class="page">
-  <div class="navigation">
-  <nav>
+  <header class="navigation">
+  <nav aria-label="Main">
     <h1><a id="nav-logo" href="/">¿Who Knows?</a></h1>
     <a id="nav-weather" href="/weather">Weather</a>
     {{ if .LoggedIn }}
@@ -19,15 +19,15 @@
     <a id="nav-register" href="/register">Register</a>
     {{ end }}
   </nav>
-  </div>
-  <div class="body">
+  </header>
+  <main class="body">
 {{end}}
 
 {{define "footer"}}
-  </div>
-  <div class="footer">
+  </main>
+  <footer class="footer">
     <span>¿Who Knows? &copy; 2009</span>
-  </div>
+  </footer>
 </div>
 </body>
 </html>

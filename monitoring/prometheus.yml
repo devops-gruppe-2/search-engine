@@ -1,0 +1,19 @@
+# Prometheus henter tallene fra appens /metrics (pull), ligesom i Anders' eksempel
+# i whoknows_variations (branch monitoring).
+global:
+  # Hent tallene hvert 15. sekund
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  # Prometheus måler også sig selv
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+
+  # Go-appen. "backend" er navnet på servicen i compose-filen, så Prometheus kan nå den
+  # i Docker-netværket uden at /metrics er åben på internettet.
+  - job_name: 'whoknows-app'
+    metrics_path: /metrics
+    static_configs:
+      - targets: ['backend:8080']

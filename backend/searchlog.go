@@ -64,6 +64,9 @@ func normalizeQuery(query string) string {
 
 // logSearch skriver én søgning til loggen. source er "web" (søgesiden) eller "api".
 func logSearch(c *gin.Context, source, query, language string, results int, took time.Duration) {
+	// Tælles også til Prometheus (se metrics.go)
+	countSearch(source, results)
+
 	searchLog.LogAttrs(c.Request.Context(), slog.LevelInfo, "search",
 		slog.String("query", normalizeQuery(query)),
 		slog.String("language", language),

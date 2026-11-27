@@ -73,9 +73,12 @@ jobs:
           chmod 600 ~/.ssh/deploy_key
           ssh-keyscan -H "$VM_HOST" >> ~/.ssh/known_hosts
 
-          # Kopiér compose-filen til serveren
+          # Kopiér compose-filen og Prometheus' konfiguration til serveren
+          ssh -i ~/.ssh/deploy_key -o BatchMode=yes "$VM_USER@$VM_HOST" "mkdir -p /opt/whoknows/monitoring"
           scp -i ~/.ssh/deploy_key -o BatchMode=yes compose.prod.yml \
             "$VM_USER@$VM_HOST:/opt/whoknows/compose.prod.yml"
+          scp -i ~/.ssh/deploy_key -o BatchMode=yes monitoring/prometheus.agent.yml \
+            "$VM_USER@$VM_HOST:/opt/whoknows/monitoring/prometheus.agent.yml"
 
           # Start appen og Nginx med præcis de images, CI har testet (sha-tagget)
           ssh -i ~/.ssh/deploy_key -o BatchMode=yes "$VM_USER@$VM_HOST" \
