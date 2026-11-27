@@ -72,7 +72,8 @@ type page struct {
 }
 
 func main() {
-	dbURL := flag.String("db", os.Getenv("DATABASE_URL"), "PostgreSQL-forbindelse (standard: DATABASE_URL)")
+	// Standarden er tom og ikke DATABASE_URL, så password'et aldrig bliver vist i hjælpeteksten
+	dbURL := flag.String("db", "", "PostgreSQL-forbindelse (bruger DATABASE_URL, hvis den ikke er angivet)")
 	lang := flag.String("lang", "en", "Wikipedia-sprog (en eller da)")
 	categories := flag.String("categories", "Category:Programming languages,Category:Computer programming", "kategorier adskilt af komma")
 	limit := flag.Int("limit", 200, "maks antal artikler der hentes")
@@ -82,6 +83,9 @@ func main() {
 	perQuery := flag.Int("per-query", 5, "med -from-log: hvor mange artikler pr. søgning")
 	flag.Parse()
 
+	if *dbURL == "" {
+		*dbURL = os.Getenv("DATABASE_URL")
+	}
 	if *dbURL == "" {
 		log.Fatal("Angiv databasen med -db eller DATABASE_URL")
 	}
