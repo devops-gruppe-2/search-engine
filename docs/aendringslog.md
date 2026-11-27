@@ -6,6 +6,25 @@ Hver ændring i koden laves på en branch og merges til `main` via en pull reque
 
 ---
 
+## 2026-11-27 · Crawleren viser ikke længere databasens password (PR #86)
+
+**Hvad var galt**
+- Crawlerens flag `-db` havde `DATABASE_URL` som standardværdi. Når crawleren fik et ukendt flag, skrev den hjælpeteksten med alle standardværdier, og dermed hele `DATABASE_URL` med **databasens password** i terminalen.
+
+**Hvad er ændret**
+- `backend/cmd/crawler/main.go`: `-db` har en tom standardværdi. Er den tom, læses `DATABASE_URL` først bagefter, så password'et aldrig kommer med i hjælpeteksten.
+
+**Hvorfor**
+- Hemmeligheder må ikke kunne havne i terminal-output, logs eller skærmbilleder.
+
+**Efter merge**
+- Password'et har været vist, så det skiftes på serveren (`ALTER USER` i PostgreSQL og `POSTGRES_PASSWORD` i `.env`).
+
+**Se at det virker**
+- `DATABASE_URL=postgres://u:HEMMELIG@x/db go run ./cmd/crawler -nope` skriver ikke `HEMMELIG`.
+
+---
+
 ## 2026-11-27 · Søgning med de fleste ord, og crawling ud fra søge-loggen (PR #84)
 
 **Hvad viste monitoring**
