@@ -35,6 +35,22 @@ Alle ændringer er beskrevet i **[ændringsloggen](docs/aendringslog.md)**. For 
 | CI/CD | GitHub Actions |
 | Server | DigitalOcean-droplet med Ubuntu |
 | Domæne og certifikat | `whoknows-gruppe2.dk` (one.com) og Let's Encrypt |
+| Monitoring | Prometheus og Grafana Cloud ([offentligt dashboard](https://dreamycaravan440.grafana.net/public-dashboards/37e50f266f314afa9bb21bf85f9115dc)) |
+
+---
+
+## 🤝 Sådan arbejder vi
+
+| | |
+|---|---|
+| **Opgaver** | Issues på [projekt-boardet](https://github.com/orgs/devops-gruppe-2/projects/1) (Backlog → Ready → Done) |
+| **Beslutninger** | Diskuteres offentligt i [Discussions](https://github.com/devops-gruppe-2/search-engine/discussions), fx valg af database (#78) og deployment-strategi (#88) |
+| **Branches** | Én branch pr. ændring (`feature/`, `fix/`, `docs/`). Ingen arbejder direkte på `main` |
+| **Pull requests** | `main` er beskyttet. En PR kan først merges, når `lint`, `test`, `e2e`, `build` og `trivy` er grønne. Vi bruger squash merge |
+| **Dokumentation** | Hver PR skriver i [ændringsloggen](docs/aendringslog.md), hvad der var galt, hvad der er ændret, og hvorfor |
+| **Afhængigheder** | Dependabot laver PR'er med opdateringer hver uge |
+
+Se også [CONTRIBUTING.md](https://github.com/devops-gruppe-2/.github/blob/main/CONTRIBUTING.md) og [SECURITY.md](https://github.com/devops-gruppe-2/.github/blob/main/SECURITY.md).
 
 ---
 
@@ -42,11 +58,14 @@ Alle ændringer er beskrevet i **[ændringsloggen](docs/aendringslog.md)**. For 
 
 | Mappe | Indhold |
 |---|---|
-| `backend/` | Go-appen: `main.go` (routes, login, register), `search.go` (søgning), `weather.go` (vejr), templates og CSS |
-| `backend/cmd/crawler/` | Program, der henter Wikipedia-artikler ind i databasen |
+| `backend/` | Go-appen: `main.go` (routes, login, register), `db.go` (database), `search.go` (søgning), `searchlog.go` (logning af søgninger), `metrics.go` (Prometheus), `weather.go` (vejr), templates og CSS |
+| `backend/migrations/` | Tabellerne og søge-indexet som SQL-migreringer (goose) |
+| `backend/cmd/crawler/` | Program, der henter Wikipedia-artikler ind i databasen, også ud fra søge-loggen |
+| `backend/cmd/searchstats/` | Program, der opsummerer søge-loggen |
 | `nginx/` | Nginx-opsætning til serveren og sikkerheds-headers |
+| `monitoring/` | Prometheus' opsætning og Grafana-dashboardet |
 | `e2e/` | Browser-tests med Playwright |
-| `scripts/` | Smoke test |
+| `scripts/` | Smoke test og backup-scriptet til serveren |
 | `.github/` | CI/CD-workflows, Dependabot og PR- og issue-skabeloner |
 | `docs/` | Ændringsloggen |
 | `legacy/` | Den gamle Python-app, kun til sammenligning. Den kører ikke. |
@@ -55,20 +74,23 @@ Alle ændringer er beskrevet i **[ændringsloggen](docs/aendringslog.md)**. For 
 
 ## ▶️ Kør projektet på din egen computer
 
-Det kræver kun **Docker**:
+Det kræver kun **Docker**. Appen, PostgreSQL og Nginx startes sammen:
 
 ```bash
 docker compose up --build
 ```
 
-Åbn http://localhost:8080. Stop igen med `Ctrl+C`.
+Åbn http://localhost:8080. Stop igen med `Ctrl+C`. Tilføj `--profile monitoring` for også at starte Prometheus og Grafana (se *Monitoring*).
 
-Vil du køre Go-appen direkte uden Docker, skal du have **Go** installeret:
+Vil du køre Go-appen direkte med **Go**, skal PostgreSQL køre, og appen skal have `DATABASE_URL`:
 
 ```bash
+docker compose up -d postgres
 cd backend
-go run .
+DATABASE_URL="postgres://whoknows:whoknows@localhost:5432/whoknows?sslmode=disable" go run .
 ```
+
+Tabellerne bliver lavet af migreringerne, når appen starter.
 
 ---
 
@@ -117,8 +139,8 @@ npx playwright test
 
 **CD** (`.github/workflows/cd.yml`) kører, når CI er grøn på `main`:
 1. Bygger Docker-images til appen og Nginx og lægger dem på GitHub Container Registry med commit-nummeret som tag.
-2. Forbinder til serveren med SSH og kopierer `compose.prod.yml` derover.
-3. Starter de nye containere med `docker compose up -d`. Databasen ligger uden for containeren, så den bliver bevaret.
+2. Forbinder til serveren med SSH og kopierer `compose.prod.yml` og Prometheus' konfiguration derover.
+3. Starter de nye containere med `docker compose up -d`. PostgreSQL gemmer sine data i et Docker-volume, så de bliver bevaret, når containerne skiftes ud. Appen kører migreringerne, når den starter.
 4. Tjekker siden med Mozilla Observatory og skriver karakteren i jobbets opsummering.
 
 ---
