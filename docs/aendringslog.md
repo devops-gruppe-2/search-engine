@@ -6,6 +6,70 @@ Hver ændring i koden laves på en branch og merges til `main` via en pull reque
 
 ---
 
+## Oversigt
+
+Alle ændringer kort, nyeste øverst. Detaljerne står længere nede.
+
+| Dato | Ændring |
+|---|---|
+| 27-11 | README opdateret og oversigt i ændringsloggen (PR #89) |
+| 27-11 | Tilgængelighed (PR #87) |
+| 27-11 | Crawleren viser ikke længere databasens password (PR #86) |
+| 27-11 | Søgning med de fleste ord, og crawling ud fra søge-loggen (PR #84) |
+| 27-11 | Debian-sikkerhedsrettelser i backend-imaget (PR #85) |
+| 26-11 | PostgreSQL i stedet for SQLite (PR #83, issue #68 og #69) |
+| 26-11 | Offentligt monitoring-dashboard (PR #82) |
+| 24-11 | Monitoring på serveren med Grafana Cloud (PR #81) |
+| 23-11 | Monitoring med Prometheus og Grafana (PR #79) |
+| 23-11 | Nginx 1.30.7 (sikkerhedsrettelse, PR #80) |
+| 16-11 | Logning af søgninger (PR #74, issue #70) |
+| 12-11 | requireLogin-middleware og HEAD-requests (PR #72, issue #31) |
+| 12-11 | README på dansk (PR #71) |
+| 10-11 | Nginx bliver på stable-sporet og henter Alpine-rettelser (PR #66) |
+| 09-11 | Register-endpoint efter OpenAPI-spec'en (PR #65, issue #17) |
+| 08-11 | Dependabot version updates (PR #60) |
+| 08-11 | Firewall (ufw) og SESSION_KEY på serveren (ingen kodeændring) |
+| 08-11 | Søgning med SQLite FTS5 (PR #58) |
+| 08-11 | Harden Yourself: Trivy, security headers og session-cookie (PR #57) |
+| 08-11 | Logget ind direkte efter registrering (PR #56) |
+| 08-11 | Weather med Open-Meteo og cache (PR #55) |
+| 07-11 | Integrationstests, unit tests og E2E-tests (PR #54) |
+| 05-11 | Bcrypt og Security Breach (PR #53) |
+| 04-11 | fail2ban på serveren (server-ændring) |
+| 04-11 | HTTPS med Nginx og Let's Encrypt (PR #50) |
+| 03-11 | PR- og issue-templates (PR #49) |
+| 03-11 | CI/CD-oprydning (PR #48) |
+| 03-11 | Branch protection på main (GitHub-indstilling, PR #47) |
+| 03-11 | Linter (golangci-lint) i CI (PR #46) |
+| 02-11 | Deploy uden tredjeparts-action og hash-pinning (PR #44) |
+| 02-11 | Dependabot slået til (GitHub-indstilling) |
+| 30-10 | Smoke test i CI (PR #38, Hawra) |
+| 30-10 | Hadolint i CI (PR #37, Hawra) |
+| 30-10 | Nginx reverse proxy i compose (Hawra) |
+| 29-10 | Domæne: whoknows-gruppe2.dk (one.com) |
+| 29-10 | Wikipedia-crawler (PR #36) |
+| 29-10 | Brugere slettes ikke længere ved deploy (PR #35) |
+| 29-10 | Frontend følger kravene til id'er og legacy-layout (PR #34) |
+| 29-10 | Deployment flyttet fra Azure til DigitalOcean (PR #33) |
+
+---
+
+## 2026-11-27 · README opdateret og oversigt i ændringsloggen (PR #89)
+
+**Hvad var galt**
+- README passede ikke længere efter skiftet til PostgreSQL og monitoring: `go run .` virker ikke uden `DATABASE_URL`, mappe-oversigten manglede `migrations/`, `monitoring/` og backup-scriptet, og CD-afsnittet beskrev den gamle database.
+- Det stod ingen steder samlet, hvordan vi arbejder (issues, Discussions, branches og PR'er).
+- Ændringsloggen er lang, og det var svært at få overblik.
+
+**Hvad er ændret**
+- `README.md`: rettede afsnit om at køre projektet, mapperne og CD. Nyt afsnit **"Sådan arbejder vi"** og monitoring i teknologitabellen.
+- `docs/aendringslog.md`: en **oversigt** øverst med én linje pr. ændring.
+
+**Hvorfor**
+- Dokumentationen skal passe med det, der faktisk kører, så en ny i gruppen kan komme i gang uden at spørge.
+
+---
+
 ## 2026-11-27 · Tilgængelighed (PR #87)
 
 **Hvad var galt** (de regler, Lighthouse og WAVE bruger)
