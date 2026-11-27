@@ -1,12 +1,12 @@
 {{ template "header" . }}
   <h2>Log In</h2>
-  {{ if .Error }}<div class="error"><strong>Error:</strong> {{ .Error }}</div>{{ end }}
+  {{ if .Error }}<div class="error" role="alert"><strong>Error:</strong> {{ .Error }}</div>{{ end }}
   <form action="/api/login" method="POST">
     <dl>
-      <dt>Username:
-      <dd><input type="text" name="username" size="30" value="{{ .FormUsername }}">
-      <dt>Password:
-      <dd><input type="password" name="password" size="30">
+      <dt><label for="username">Username:</label>
+      <dd><input type="text" id="username" name="username" size="30" value="{{ .FormUsername }}" autocomplete="username" required>
+      <dt><label for="password">Password:</label>
+      <dd><input type="password" id="password" name="password" size="30" autocomplete="current-password" required>
     </dl>
     <div class="actions">
       <button type="submit" id="login-button">Log In</button>
