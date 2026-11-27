@@ -59,13 +59,50 @@ func TestSearchFindsOtherFormsOfAWord(t *testing.T) {
 	}
 }
 
-func TestSearchNeedsAllWords(t *testing.T) {
+// Sider med alle ordene kommer først, men sider med kun nogle af ordene vises også
+func TestSearchShowsPagesWithAllWordsFirst(t *testing.T) {
 	app := newTestApp(t)
-	addPage(t, "Go", "en", "Go is a programming language from Google.")
 	addPage(t, "Java", "en", "Java is a programming language from Sun.")
+	addPage(t, "Go", "en", "Go is a programming language from Google.")
+	addPage(t, "Pizza", "en", "Pizza is food.")
 
-	if got := searchTitles(t, app, "programming google"); len(got) != 1 || got[0] != "Go" {
-		t.Fatalf("search for programming google = %v, want [Go]", got)
+	got := searchTitles(t, app, "programming google")
+	if len(got) != 2 || got[0] != "Go" || got[1] != "Java" {
+		t.Fatalf("search for programming google = %v, want [Go Java]", got)
+	}
+}
+
+// Søgningen fra loggen, der før gav 0 resultater, fordi ikke alle ord stod på siden
+func TestSearchFindsPagesThatDoNotHaveEveryWord(t *testing.T) {
+	app := newTestApp(t)
+	addPage(t, "Quantum computing", "en", "Quantum computing uses qubits instead of bits.")
+	addPage(t, "Cooking", "en", "Cooking is about food.")
+
+	got := searchTitles(t, app, "what is the best programming language for quantum computing?")
+	if len(got) != 1 || got[0] != "Quantum computing" {
+		t.Fatalf("search = %v, want [Quantum computing]", got)
+	}
+}
+
+// En side med flere af ordene står over en side med færre
+func TestSearchRanksPagesWithMoreOfTheWordsHigher(t *testing.T) {
+	app := newTestApp(t)
+	addPage(t, "Article A", "en", "This text is about cryptography.")
+	addPage(t, "Article B", "en", "This text is about cryptography and security in programming.")
+
+	got := searchTitles(t, app, "cryptography security programming")
+	if len(got) != 2 || got[0] != "Article B" {
+		t.Fatalf("search = %v, want Article B first", got)
+	}
+}
+
+// Kun småord giver ingen resultater og ingen fejl
+func TestSearchWithOnlyStopWordsReturnsNothing(t *testing.T) {
+	app := newTestApp(t)
+	addPage(t, "Go", "en", "Go is a programming language.")
+
+	if got := searchTitles(t, app, "what is the"); len(got) != 0 {
+		t.Fatalf("search for only stop words = %v, want nothing", got)
 	}
 }
 

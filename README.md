@@ -148,7 +148,7 @@ docker run --rm -v /var/run/docker.sock:/var/run/docker.sock aquasec/trivy:0.69.
 
 Søgningen bruger PostgreSQL's fuldtekstsøgning i stedet for `LIKE`:
 - Kolonnen `search_vector` (`tsvector`) udregnes af PostgreSQL, hver gang en side gemmes eller ændres. Et **GIN-index** gør, at søgningen ikke skal læse alle sider.
-- Resultaterne sorteres efter relevans (`ts_rank`), og et ord i titlen tæller 10 gange mere end et ord i teksten.
+- Den finder sider med mindst ét af ordene. Sider med alle ordene kommer først, og derefter sorteres efter relevans (`ts_rank`), hvor et ord i titlen tæller 10 gange mere end et ord i teksten.
 - "languages" finder også "language", og småord som "the" og "is" ignoreres. Danske sider bruger den danske ordbog.
 
 Tabellerne og indexet laves af migreringerne i `backend/migrations/` (goose), når appen starter.
@@ -232,11 +232,13 @@ DATABASE_URL="postgres://whoknows:whoknows@localhost:5432/whoknows?sslmode=disab
 | `-limit` | `200` | Højst så mange artikler |
 | `-delay` | `200ms` | Pause mellem kald |
 
+**Crawl det, brugerne ikke finder:** med `-from-log` læser crawleren søge-loggen, finder de mest søgte søgninger uden resultater og henter de artikler, Wikipedias egen søgning finder for dem (`-top` søgninger, `-per-query` artikler pr. søgning).
+
 På serveren ligger crawleren i app-containeren, som kender `DATABASE_URL`. Tag en backup først:
 
 ```bash
 /opt/whoknows/backup-db.sh
-docker exec whoknows-backend ./crawler -limit 800
+docker exec whoknows-backend ./crawler -from-log logs/searches.log -top 30 -per-query 5
 ```
 
 ---
