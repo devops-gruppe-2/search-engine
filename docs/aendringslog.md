@@ -36,6 +36,20 @@ docker exec whoknows-backend ./crawler -from-log logs/searches.log -top 30 -per-
 
 ---
 
+## 2026-11-27 · Debian-sikkerhedsrettelser i backend-imaget (PR #85)
+
+**Hvad var galt**
+- Trivy stoppede alle pull requests: `debian:bookworm-slim`, som backend-imaget bygger på, havde **4 HIGH-sårbarheder** i `libpam` (bl.a. CVE-2025-6020). Rettelsen findes i Debian (`1.5.2-6+deb12u3`), men det officielle image var ikke genopbygget endnu.
+
+**Hvad er ændret**
+- `backend/Dockerfile`: `apt-get update && apt-get upgrade -y`, når imaget bygges, så vi får Debians rettelser med det samme. Det er samme løsning som `apk upgrade` i Nginx-imaget (PR #66).
+
+**Hvorfor**
+- Vi skal ikke vente på, at Debian-holdet genopbygger deres image, før en sikkerhedsrettelse kommer med.
+- Trivy og branch protection gjorde, at det blev opdaget, før et sårbart image kunne komme i produktion.
+
+---
+
 ## 2026-11-26 · PostgreSQL i stedet for SQLite (PR #83, issue #68 og #69)
 
 **Hvad var galt**
