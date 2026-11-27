@@ -2,19 +2,20 @@
 <h2>Weather forecast</h2>
 
 {{ if .Error }}
-<div class="error">{{ .Error }}</div>
+<div class="error" role="alert">{{ .Error }}</div>
 {{ end }}
 
 {{ with .Forecast }}
 <p>The next {{ len .Days }} days in {{ .City }}.</p>
 <table id="weather-forecast" class="weather">
+  <caption class="visually-hidden">Weather forecast for {{ .City }}</caption>
   <thead>
     <tr>
-      <th>Date</th>
-      <th>Weather</th>
-      <th>Max</th>
-      <th>Min</th>
-      <th>Precipitation</th>
+      <th scope="col">Date</th>
+      <th scope="col">Weather</th>
+      <th scope="col">Max</th>
+      <th scope="col">Min</th>
+      <th scope="col">Precipitation</th>
     </tr>
   </thead>
   <tbody>

@@ -4,13 +4,14 @@ body {
     font-size: 14px;
 }
 
-div.page div.body {
+div.page .body {
     padding: 10px;
 }
 
-div.page div.footer {
+/* Kontrast mindst 4,5:1 (WCAG AA). #555 på #eee er 6,4:1, #888 var kun 2,9:1 */
+div.page .footer {
     background: #eee;
-    color: #888;
+    color: #555;
     padding: 5px 10px;
     font-size: 12px;
 }
@@ -97,6 +98,25 @@ table.weather th, table.weather td {
 }
 
 p.weather-source {
-    color: #888;
+    color: #555;
     font-size: 12px;
+}
+
+/* Tekst kun til skærmlæsere (fx label på søgefeltet). Kan ikke ses, men bliver læst op. */
+.visually-hidden {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+}
+
+/* Tydelig markering af det element, man står på med tastaturet */
+a:focus-visible, button:focus-visible, input:focus-visible {
+    outline: 3px solid #1a5fb4;
+    outline-offset: 2px;
 }

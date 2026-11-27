@@ -6,6 +6,98 @@ Hver ændring i koden laves på en branch og merges til `main` via en pull reque
 
 ---
 
+## 2026-11-27 · Tilgængelighed (PR #87)
+
+**Hvad var galt** (de regler, Lighthouse og WAVE bruger)
+| Problem | Hvor | Hvorfor er det et problem |
+|---|---|---|
+| Inputfelter uden label | Søgefeltet, login, register, skift password | En skærmlæser kan ikke sige, hvad feltet er til. "Username:" stod som tekst ved siden af feltet, ikke som en `<label>` |
+| For lav kontrast | Footeren (`#888` på `#eee`, 2,9:1) og "Updated …" under vejret (`#888` på hvid, 3,5:1) | WCAG AA kræver mindst 4,5:1. Svagsynede kan ikke læse teksten |
+| Ingen landmarks | Alle sider (kun `<div>`) | Skærmlæsere bruger `<header>`, `<main>` og `<footer>` til at hoppe direkte til indholdet |
+| Fejlbeskeder bliver ikke læst op | "Error: …" på login, register m.fl. | Uden `role="alert"` opdager en skærmlæser ikke, at der kom en fejl |
+| Ingen `autocomplete` | Login, register, skift password | Browsere og password-managere kan ikke udfylde felterne |
+
+**Hvad er ændret**
+- `header.html`: `<header>`, `<nav aria-label="Main">`, `<main>` og `<footer>` i stedet for `<div>`.
+- Alle felter har `<label for="…">`. Søgefeltet har en label, der kun læses op (`.visually-hidden`), så det ser ud som før.
+- Søgeformularen har `role="search"`, og søgefeltet er `type="search"`.
+- Login og register: `autocomplete` (`username`, `current-password`, `new-password`, `email`), `required` og `type="email"` på e-mail.
+- Fejlbeskeder har `role="alert"`.
+- Vejr-tabellen har en `<caption>` (kun til skærmlæsere) og `scope="col"` på overskrifterne.
+- `style.css`: grå tekst er `#555` (6,4:1 på `#eee` og 7,5:1 på hvid). Tydelig fokus-ramme, når man bruger tastaturet.
+- Alle id'er, som simulatoren og testene bruger (`search-input`, `login-button` osv.), er uændrede, og siderne ser ud som før.
+
+**Tests**
+- `backend/accessibility_test.go`: alle felter på søgesiden, login, register og skift password har en label. Siderne har `lang`, `<main>`, `<nav>`, `<header>` og `<footer>`. Fejlbeskeder har `role="alert"`.
+
+**Se at det virker**
+- I Edge eller Chrome: F12 → **Lighthouse** → *Accessibility* → *Analyze page load* på https://whoknows-gruppe2.dk.
+
+---
+
+## 2026-11-27 · Crawleren viser ikke længere databasens password (PR #86)
+
+**Hvad var galt**
+- Crawlerens flag `-db` havde `DATABASE_URL` som standardværdi. Når crawleren fik et ukendt flag, skrev den hjælpeteksten med alle standardværdier, og dermed hele `DATABASE_URL` med **databasens password** i terminalen.
+
+**Hvad er ændret**
+- `backend/cmd/crawler/main.go`: `-db` har en tom standardværdi. Er den tom, læses `DATABASE_URL` først bagefter, så password'et aldrig kommer med i hjælpeteksten.
+
+**Hvorfor**
+- Hemmeligheder må ikke kunne havne i terminal-output, logs eller skærmbilleder.
+
+**Efter merge**
+- Password'et har været vist, så det skiftes på serveren (`ALTER USER` i PostgreSQL og `POSTGRES_PASSWORD` i `.env`).
+
+**Se at det virker**
+- `DATABASE_URL=postgres://u:HEMMELIG@x/db go run ./cmd/crawler -nope` skriver ikke `HEMMELIG`.
+
+---
+
+## 2026-11-27 · Søgning med de fleste ord, og crawling ud fra søge-loggen (PR #84)
+
+**Hvad viste monitoring**
+- Søge-loggen og Grafana viste, at **ca. 26 %** af søgningerne gav 0 resultater med SQLite FTS5. De fleste var spørgsmål som *"what is the best programming language for quantum computing?"*.
+- Vi testede på siden: `quantum computing` gav 10 resultater, men hele spørgsmålet gav 0. Siderne fandtes altså. Problemet var, at søgningen krævede, at **alle** ord stod på siden, også "what", "is", "the" og "best".
+- Efter skiftet til PostgreSQL (PR #83) faldt tallet til **ca. 16 %** (64 af 401 søgninger på 12 timer), fordi PostgreSQL's ordbog fjerner småord. Ordet "best" og lignende ord skulle dog stadig stå på siden.
+
+**Hvad er ændret**
+- `backend/search.go`: søgningen finder sider med **mindst ét** af ordene (`a | b`) i stedet for alle (`a & b`). Sider med **alle** ordene står først, og derefter sorteres efter `ts_rank`, så sider med flere af ordene og ord i titlen kommer højere.
+- `backend/cmd/crawler`: nyt flag `-from-log`. Crawleren læser søge-loggen, finder de mest søgte søgninger uden resultater (`-top`, standard 30) og henter de artikler, **Wikipedias egen søgning** finder for hver af dem (`-per-query`, standard 5). Det er opgaven *Let them search*: logning viser, hvad brugerne søger efter, og det bestemmer, hvad der crawles.
+
+**Hvorfor**
+- Brugerne skriver hele spørgsmål, ikke enkelte nøgleord. En søgemaskine skal vise det bedste, den har, også når ikke alle ord passer.
+- Crawling ud fra loggen henter det, brugerne faktisk savner, i stedet for at gætte på kategorier.
+
+**Tests**
+- `TestSearchShowsPagesWithAllWordsFirst`, `TestSearchFindsPagesThatDoNotHaveEveryWord` (spørgsmålet fra loggen), `TestSearchRanksPagesWithMoreOfTheWordsHigher` og `TestSearchWithOnlyStopWordsReturnsNothing`.
+- `backend/cmd/crawler`: `TestMissingQueriesFromTheSearchLog` og `TestSearchWikipedia` (mod en falsk Wikipedia).
+
+**Efter merge (på serveren)**
+```bash
+/opt/whoknows/backup-db.sh
+docker exec whoknows-backend ./crawler -from-log logs/searches.log -top 30 -per-query 5
+```
+
+**Se at det virker**
+- Grafana → *Andel uden resultat over tid* skal falde efter deployet, og igen efter crawlingen.
+
+---
+
+## 2026-11-27 · Debian-sikkerhedsrettelser i backend-imaget (PR #85)
+
+**Hvad var galt**
+- Trivy stoppede alle pull requests: `debian:bookworm-slim`, som backend-imaget bygger på, havde **4 HIGH-sårbarheder** i `libpam` (bl.a. CVE-2025-6020). Rettelsen findes i Debian (`1.5.2-6+deb12u3`), men det officielle image var ikke genopbygget endnu.
+
+**Hvad er ændret**
+- `backend/Dockerfile`: `apt-get update && apt-get upgrade -y`, når imaget bygges, så vi får Debians rettelser med det samme. Det er samme løsning som `apk upgrade` i Nginx-imaget (PR #66).
+
+**Hvorfor**
+- Vi skal ikke vente på, at Debian-holdet genopbygger deres image, før en sikkerhedsrettelse kommer med.
+- Trivy og branch protection gjorde, at det blev opdaget, før et sårbart image kunne komme i produktion.
+
+---
+
 ## 2026-11-26 · PostgreSQL i stedet for SQLite (PR #83, issue #68 og #69)
 
 **Hvad var galt**

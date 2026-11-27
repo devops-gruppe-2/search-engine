@@ -12,22 +12,34 @@ import (
 // Højst så mange resultater pr. søgning, de mest relevante først
 const maxSearchResults = 50
 
-// plainto_tsquery laver brugerens tekst om til en søgning: alle ord skal findes på siden,
-// stemming bruges ("languages" finder "language"), og småord som "the" fjernes.
-// Tegn som " - * ( ) og ord som AND/OR giver ikke fejl, fordi teksten ikke læses som syntaks.
+// Søgningen finder sider med mindst ét af ordene og viser de bedste først.
 //
-// ts_rank giver en relevans-score. Vægtene er {D, C, B, A}: ord i titlen (A) tæller
-// 10 gange så meget som ord i teksten (B), som med bm25(10, 1) i FTS5 før.
+// Før krævede den, at alle ord stod på siden. Søge-loggen og Grafana viste, at mange søgninger
+// som "best programming language for quantum computing" derfor gav 0 resultater, selv om
+// vi havde sider om quantum computing.
 //
-// Sproget vælger ordbogen, så danske sider søges med den danske.
+//   - all_words: plainto_tsquery laver teksten om til ord, der alle skal findes ("a & b").
+//     Stemming bruges ("languages" finder "language"), og småord som "the" fjernes.
+//     Tegn som " - * ( ) og ord som AND/OR giver ikke fejl, fordi teksten ikke læses som syntaks.
+//   - any_word: de samme ord, men hvor ét er nok ("a | b").
+//
+// Rækkefølgen: sider med alle ordene først, derefter efter ts_rank. Vægtene er {D, C, B, A}:
+// ord i titlen (A) tæller 10 gange så meget som ord i teksten (B). Sider med flere af ordene
+// får en højere score. Sproget vælger ordbogen, så danske sider søges med den danske.
 const searchQuery = `
-WITH q AS (
-    SELECT plainto_tsquery(CASE WHEN $1 = 'da' THEN 'danish'::regconfig ELSE 'english'::regconfig END, $2) AS query
+WITH cfg AS (
+    SELECT CASE WHEN $1 = 'da' THEN 'danish'::regconfig ELSE 'english'::regconfig END AS c
+), q AS (
+    SELECT plainto_tsquery(cfg.c, $2) AS all_words,
+           to_tsquery(cfg.c, replace(plainto_tsquery(cfg.c, $2)::text, ' & ', ' | ')) AS any_word
+    FROM cfg
 )
 SELECT p.title, p.url, p.language, COALESCE(to_char(p.last_updated AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"'), ''), p.content
 FROM pages p, q
-WHERE p.language = $1 AND p.search_vector @@ q.query
-ORDER BY ts_rank('{0.1, 0.2, 0.1, 1.0}', p.search_vector, q.query) DESC, p.title
+WHERE p.language = $1 AND p.search_vector @@ q.any_word
+ORDER BY p.search_vector @@ q.all_words DESC,
+         ts_rank('{0.1, 0.2, 0.1, 1.0}', p.search_vector, q.any_word) DESC,
+         p.title
 LIMIT $3`
 
 // searchPages finder de mest relevante sider på det valgte sprog
