@@ -6,6 +6,35 @@ Hver ændring i koden laves på en branch og merges til `main` via en pull reque
 
 ---
 
+## 2026-11-27 · Tilgængelighed (PR #87)
+
+**Hvad var galt** (de regler, Lighthouse og WAVE bruger)
+| Problem | Hvor | Hvorfor er det et problem |
+|---|---|---|
+| Inputfelter uden label | Søgefeltet, login, register, skift password | En skærmlæser kan ikke sige, hvad feltet er til. "Username:" stod som tekst ved siden af feltet, ikke som en `<label>` |
+| For lav kontrast | Footeren (`#888` på `#eee`, 2,9:1) og "Updated …" under vejret (`#888` på hvid, 3,5:1) | WCAG AA kræver mindst 4,5:1. Svagsynede kan ikke læse teksten |
+| Ingen landmarks | Alle sider (kun `<div>`) | Skærmlæsere bruger `<header>`, `<main>` og `<footer>` til at hoppe direkte til indholdet |
+| Fejlbeskeder bliver ikke læst op | "Error: …" på login, register m.fl. | Uden `role="alert"` opdager en skærmlæser ikke, at der kom en fejl |
+| Ingen `autocomplete` | Login, register, skift password | Browsere og password-managere kan ikke udfylde felterne |
+
+**Hvad er ændret**
+- `header.html`: `<header>`, `<nav aria-label="Main">`, `<main>` og `<footer>` i stedet for `<div>`.
+- Alle felter har `<label for="…">`. Søgefeltet har en label, der kun læses op (`.visually-hidden`), så det ser ud som før.
+- Søgeformularen har `role="search"`, og søgefeltet er `type="search"`.
+- Login og register: `autocomplete` (`username`, `current-password`, `new-password`, `email`), `required` og `type="email"` på e-mail.
+- Fejlbeskeder har `role="alert"`.
+- Vejr-tabellen har en `<caption>` (kun til skærmlæsere) og `scope="col"` på overskrifterne.
+- `style.css`: grå tekst er `#555` (6,4:1 på `#eee` og 7,5:1 på hvid). Tydelig fokus-ramme, når man bruger tastaturet.
+- Alle id'er, som simulatoren og testene bruger (`search-input`, `login-button` osv.), er uændrede, og siderne ser ud som før.
+
+**Tests**
+- `backend/accessibility_test.go`: alle felter på søgesiden, login, register og skift password har en label. Siderne har `lang`, `<main>`, `<nav>`, `<header>` og `<footer>`. Fejlbeskeder har `role="alert"`.
+
+**Se at det virker**
+- I Edge eller Chrome: F12 → **Lighthouse** → *Accessibility* → *Analyze page load* på https://whoknows-gruppe2.dk.
+
+---
+
 ## 2026-11-27 · Crawleren viser ikke længere databasens password (PR #86)
 
 **Hvad var galt**
